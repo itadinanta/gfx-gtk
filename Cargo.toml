@@ -4,4 +4,15 @@ version = "0.1.0"
 authors = ["Nicola Orru <nigu.orru@gmail.com>"]
 edition = "2018"
 
+[[bin]]
+name="gfx-gtk"
+path="src/main.rs"
+
 [dependencies]
+gl = "*"
+glutin = "*"
+gtk = { version = "*", features=["v3_16"] }
+gdk = { version = "*", features=["v3_16"] }
+gfx = "0.17"
+gfx_core = "0.8"
+gfx_device_gl = "0.15"
