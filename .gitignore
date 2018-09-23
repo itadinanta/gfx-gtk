@@ -1,2 +1,8 @@
 /target
 **/*.rs.bk
+mingw64/
+mingw-w64-*.pkg.tar.xz
+.BUILDINFO
+.INSTALL
+.MTREE
+.PKGINFO
