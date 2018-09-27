@@ -26,15 +26,14 @@ pub type ScreenDepthFormat = gfx::format::Depth;
 type Rgba = [f32; 4];
 type Depth = f32;
 
-struct GfxContext<D, F, C>
+struct GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
-	C: gfx::CommandBuffer<D::Resources>,
 {
 	device: D,
 	factory: F,
-	encoder: Encoder<D::Resources, C>,
+	encoder: Encoder<D::Resources, D::CommandBuffer>,
 	frame_buffer: gfx::handle::RenderTargetView<D::Resources, ScreenColorFormat>,
 	depth_buffer: gfx::handle::DepthStencilView<D::Resources, ScreenDepthFormat>,
 	background_color: Rgba,
@@ -43,29 +42,28 @@ where
 
 type GlDevice = gfx_device_gl::Device;
 type GlFactory = gfx_device_gl::Factory;
-type GlResources = <GlDevice as gfx::Device>::Resources;
 type GlCommandBuffer = gfx_device_gl::CommandBuffer;
 
 pub trait Renderer {
 	fn render(&mut self);
 }
 
-impl<D, F, C> Renderer for GfxContext<D, F, C>
+impl<D, F> Renderer for GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: Factory<D::Resources>,
-	C: gfx::CommandBuffer<D::Resources>,
 {
 	fn render(&mut self) {
 		self.encoder
 			.clear(&self.frame_buffer, self.background_color);
 		self.encoder
 			.clear_depth(&self.depth_buffer, self.background_depth);
-		//self.encoder.flush(&mut self.device);
+		self.encoder.flush(&mut self.device);
+		self.device.cleanup();
 	}
 }
 
-type GlGfxContext = GfxContext<GlDevice, GlFactory, GlCommandBuffer>;
+type GlGfxContext = GfxContext<GlDevice, GlFactory>;
 
 pub fn main() {
 	if gtk::init().is_err() {
@@ -110,7 +108,8 @@ pub fn main() {
 
 	let gfx_context: Rc<RefCell<Option<GlGfxContext>>> = Rc::new(RefCell::new(None));
 
-	glarea.connect_realize(|widget| {
+	let gfx_context_clone = gfx_context.clone();
+	glarea.connect_realize(move |widget| {
 		if widget.get_realized() {
 			widget.make_current();
 		}
@@ -118,7 +117,7 @@ pub fn main() {
 		let allocation = widget.get_allocation();
 
 		// create the main color/depth targets
-		let ptr = unsafe { gl::GetString(gl::VENDOR) };
+		//let ptr = unsafe { gl::GetString(gl::VENDOR) };
 		let dim = (
 			allocation.width as u16,
 			allocation.height as u16,
@@ -126,21 +125,37 @@ pub fn main() {
 			gfx::texture::AaMode::Single,
 		);
 
-		let (device, factory) = gfx_device_gl::create(get_proc_addr);
-
+		let (device, mut factory) = gfx_device_gl::create(get_proc_addr);
+		let encoder = factory.create_command_buffer().into();
 		let color_format = ScreenColorFormat::get_format();
 		let depthstencil_format = ScreenDepthFormat::get_format();
-		let (color_view, ds_view) =
+		let (frame_buffer, depth_buffer) =
 			gfx_device_gl::create_main_targets_raw(dim, color_format.0, depthstencil_format.0);
+
+		*gfx_context_clone.borrow_mut() = Some(GlGfxContext {
+			device,
+			factory,
+			encoder,
+			frame_buffer: gfx::memory::Typed::new(frame_buffer),
+			depth_buffer: gfx::memory::Typed::new(depth_buffer),
+			background_color: [1., 1., 1., 1.],
+			background_depth: 1.,
+		});
 	});
 
-	glarea.connect_render(|_, _| {
+	let gfx_context_clone = gfx_context.clone();
+	glarea.connect_render(move |_, _| {
 		unsafe {
 			gl::ClearColor(1.0, 0.0, 0.0, 1.0);
 			gl::Clear(gl::COLOR_BUFFER_BIT);
 
 			gl::Flush();
 		};
+		
+		if let Some(ref mut context) = *gfx_context_clone.borrow_mut() {
+			context.render();
+		}
+
 
 		Inhibit(false)
 	});
