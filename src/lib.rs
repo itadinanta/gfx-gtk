@@ -223,6 +223,22 @@ impl GlGfxContext {
 		})
 	}
 
+	pub fn encoder_mut(&mut self) -> &mut GlEncoder {
+		&mut self.encoder
+	}
+
+	pub fn device_mut(&mut self) -> &mut GlDevice {
+		&mut self.device
+	}
+
+	pub fn factory_mut(&mut self) -> &mut GlFactory {
+		&mut self.factory
+	}
+
+	pub fn size(&self) -> (gfx::texture::Size, gfx::texture::Size) {
+		(self.width, self.height)
+	}
+
 	pub fn resize(&mut self, widget_width: i32, widget_height: i32) -> Result<()> {
 		let new_width = widget_width as gfx::texture::Size;
 		let new_height = widget_height as gfx::texture::Size;

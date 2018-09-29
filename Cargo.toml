@@ -23,3 +23,6 @@ gdk = { version = "0.9", features=["v3_16"] }
 gl = "0.10"
 gfx = "0.17"
 gfx_device_gl = "0.15"
+
+[dev-dependencies]
+cgmath = "*"
