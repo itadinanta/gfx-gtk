@@ -19,7 +19,7 @@ pub type PrimitiveIndex = i16;
 pub type VertexIndex = u16;
 
 const COLOR_RED: gfx_gtk::Rgba = [1., 0., 0., 1.];
-const COLOR_GREEN: gfx_gtk::Rgba = [0., 0., 0., 1.];
+const COLOR_GREEN: gfx_gtk::Rgba = [0., 1., 0., 1.];
 const COLOR_BLUE: gfx_gtk::Rgba = [0., 0., 1., 1.];
 const COLOR_MAGENTA: gfx_gtk::Rgba = [1., 0., 1., 1.];
 const COLOR_WHITE: gfx_gtk::Rgba = [1., 1., 1., 1.];
@@ -42,15 +42,17 @@ gfx_defines!(
 	pipeline unlit {
 		vbuf: gfx::VertexBuffer<Vertex> = (),
 		camera: gfx::ConstantBuffer<CameraArgs> = "cb_CameraArgs",
-		model: gfx::ConstantBuffer<ModelArgs> = "u_ModelArgs",
+		model: gfx::ConstantBuffer<ModelArgs> = "cb_ModelArgs",
 		color_target: gfx::BlendTarget <gfx_gtk::formats::RenderColorFormat> = ("o_Color", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
 		depth_target: gfx::DepthTarget <gfx_gtk::formats::RenderDepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
 	}
 );
 
 struct SimpleRenderCallback {
-	vertices: Vec<Vertex>,
-	indices: Vec<VertexIndex>,
+	model_yaw: cgmath::Deg<f32>,
+
+	vertex_buffer: gfx::handle::Buffer<gfx_gtk::GlResources, Vertex>,
+	index_buffer: gfx::Slice<gfx_gtk::GlResources>,
 	pso: gfx::pso::PipelineState<gfx_gtk::GlResources, unlit::Meta>,
 	camera: gfx::handle::Buffer<gfx_gtk::GlResources, CameraArgs>,
 	model: gfx::handle::Buffer<gfx_gtk::GlResources, ModelArgs>,
@@ -67,8 +69,50 @@ impl Vertex {
 	}
 }
 
-const VERTEX_SHADER: &str = "";
-const PIXEL_SHADER: &str = "";
+const VERTEX_SHADER: &str = r"
+// unlit.vert
+#version 150 core
+
+layout (std140) uniform cb_CameraArgs {
+	uniform mat4 u_Proj;
+	uniform mat4 u_View;
+};
+
+layout (std140) uniform cb_ModelArgs {
+    mat4 u_Model;
+};
+
+in vec3 a_Pos;
+in vec4 a_Color;
+
+out VertexData {
+	vec4 Position;
+	vec4 Color;
+}v_Out;
+
+void main() {
+	v_Out.Position = u_Model * vec4(a_Pos, 1.0);
+	v_Out.Color = a_Color;
+	gl_Position = u_Proj * u_View * v_Out.Position;
+}
+";
+
+const PIXEL_SHADER: &str = r"
+// unlit.shader
+#version 150 core
+
+
+in VertexData {
+	vec4 Position;
+	vec4 Color;
+}v_In;
+
+out vec4 o_Color;
+
+void main() {
+	o_Color = v_In.Color;
+}
+";
 
 impl SimpleRenderCallback {
 	fn new(factory: &mut gfx_gtk::GlFactory) -> gfx_gtk::Result<Self> {
@@ -79,19 +123,24 @@ impl SimpleRenderCallback {
 			Vertex::new(1., -1., COLOR_MAGENTA),
 		];
 
-		let indices = vec![0, 1, 2, 1, 3, 2];
+		let indices = vec![0u16, 1, 2, 2, 3, 0];
+
+		let (vertex_buffer, index_buffer) =
+			factory.create_vertex_buffer_with_slice(vertices.as_slice(), indices.as_slice());
 
 		let camera = factory.create_constant_buffer(1);
 		let model = factory.create_constant_buffer(1);
-		let pso = factory.create_pipeline_simple(
-			VERTEX_SHADER.as_bytes(),
-			PIXEL_SHADER.as_bytes(),
-			unlit::new(),
-		)?;
+		let pso = factory
+			.create_pipeline_simple(
+				VERTEX_SHADER.as_bytes(),
+				PIXEL_SHADER.as_bytes(),
+				unlit::new(),
+			).unwrap();
 
 		Ok(SimpleRenderCallback {
-			vertices,
-			indices,
+			model_yaw: cgmath::Deg(0.),
+			vertex_buffer,
+			index_buffer,
 			camera,
 			model,
 			pso,
@@ -122,8 +171,8 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 			cgmath::Point3::new(0., 0., -1.),
 			cgmath::Vector3::new(0., 1.0, 0.),
 		);
-		let transform =
-			cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, -1.0)).into();
+		let transform = (cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, -2.0))
+			* cgmath::Matrix4::from_angle_y(self.model_yaw)).into();
 
 		encoder.update_constant_buffer(
 			&self.camera,
@@ -133,12 +182,11 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 			},
 		);
 		encoder.update_constant_buffer(&self.model, &ModelArgs { transform });
-
 		encoder.draw(
-			indices,
+			&self.index_buffer,
 			&self.pso,
 			&unlit::Data {
-				vbuf: vertices,
+				vbuf: self.vertex_buffer.clone(),
 				camera: self.camera.clone(),
 				model: self.model.clone(),
 				color_target: frame_buffer.clone(),
@@ -226,7 +274,10 @@ pub fn main() {
 		let glarea = glarea.downgrade();
 		move |widget| {
 			if let Some(glarea) = glarea.upgrade() {
-				if let Some(ref mut render_callback) = *render_callback.borrow_mut() {}
+				if let Some(ref mut render_callback) = *render_callback.borrow_mut() {
+					render_callback.model_yaw = cgmath::Deg(widget.get_value() as f32);
+					glarea.queue_draw();
+				}
 			}
 		}
 	});

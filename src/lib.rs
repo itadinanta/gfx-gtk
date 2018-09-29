@@ -154,8 +154,8 @@ fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 				//println!("Loaded {} as {:?}", s, v);
 				v
 			}
-			Err(_) => {
-				//println!("{:?}", e);
+			Err(e) => {
+				println!("{:?}", e);
 				ptr::null()
 			}
 		}
@@ -163,8 +163,20 @@ fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 }
 
 pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
+	// Workaround for missing functions
+	let s = match s {
+		"glBlendEquationSeparateiARB" => "glBlendEquationSeparatei",
+		"glBlendEquationiARB" => "glBlendEquationi",
+		"glBlendFuncSeparateiARB" => "glBlendFuncSeparatei",
+		"glBlendFunciARB" => "glBlendFunci",
+
+		_ => s,
+	};
+
 	let v = epoxy::get_proc_addr(s);
-	//println!("Loaded {} as {:?}", s, v);
+	if (v.is_null()) {
+		println!("Function {} is missing {:?}", s, v);
+	}
 	v
 }
 
