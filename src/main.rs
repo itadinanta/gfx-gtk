@@ -84,6 +84,7 @@ type GlResources = <GlDevice as gfx::Device>::Resources;
 
 pub trait Renderer {
 	fn render(&mut self);
+	fn cleanup(&mut self);
 }
 
 impl<D, F> Renderer for GfxContext<D, F>
@@ -97,6 +98,9 @@ where
 		//		self.encoder
 		//			.clear_depth(&self.depth_buffer, self.background_depth);
 		self.encoder.flush(&mut self.device);
+	}
+
+	fn cleanup(&mut self) {
 		self.device.cleanup();
 	}
 }
@@ -246,9 +250,6 @@ pub fn main() {
 			device.with_gl(|gl| gl.GetIntegerv(gl::DRAW_FRAMEBUFFER_BINDING, &mut attached_color))
 		};
 
-		//		let frame_buffer = gfx::memory::Typed::new(frame_buffer);
-		//		let depth_buffer = gfx::memory::Typed::new(depth_buffer);
-
 		*gfx_context_clone.borrow_mut() = Some(GlGfxContext {
 			//			gl_context,
 			device,
@@ -267,26 +268,17 @@ pub fn main() {
 		let size = widget.get_allocation();
 		if let Some(ref mut context) = *gfx_context_clone.borrow_mut() {
 			context.render();
-			//			unsafe {
-			//				context.device.with_gl(|gl| {
-			//					gl.ClearColor(1.0, 0.0, 0.0, 1.0);
-			//					gl.Clear(gl::COLOR_BUFFER_BIT);
-			//					gl.Flush();
-			//				});
-			//			}
-			//widget.make_current();
-			//widget.attach_buffers();
 			unsafe {
-				epoxy::BindFramebufferEXT(epoxy::READ_FRAMEBUFFER, 1);
-				epoxy::BindFramebufferEXT(epoxy::DRAW_FRAMEBUFFER, 2);
-				epoxy::FramebufferRenderbufferEXT(
+				epoxy::BindFramebuffer(epoxy::READ_FRAMEBUFFER, 1);
+				epoxy::BindFramebuffer(epoxy::DRAW_FRAMEBUFFER, 2);
+				epoxy::FramebufferRenderbuffer(
 					epoxy::FRAMEBUFFER,
 					epoxy::COLOR_ATTACHMENT0,
 					epoxy::RENDERBUFFER,
 					1,
 				);
 
-				epoxy::BlitFramebufferEXT(
+				epoxy::BlitFramebuffer(
 					0,
 					0,
 					size.width,
@@ -300,21 +292,7 @@ pub fn main() {
 				);
 				epoxy::Flush();
 			}
-			//context.gl_context.make_current();
-			//
-			//			//context.render();
-			//			unsafe {
-			//				gl::Flush();
-			//			}
-
-			//
-			//			let attached_color = unsafe {
-			//				let mut attached_color = 0;
-			//				context.device.with_gl(|gl| {
-			//					gl.GetIntegerv(gl::DRAW_FRAMEBUFFER_BINDING, &mut attached_color)
-			//				});
-			//				attached_color
-			//			};
+			context.cleanup();
 		}
 
 		Inhibit(false)
