@@ -6,3 +6,4 @@ mingw-w64-*.pkg.tar.xz
 .INSTALL
 .MTREE
 .PKGINFO
+*.trace
