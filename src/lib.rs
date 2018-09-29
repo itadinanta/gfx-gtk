@@ -224,8 +224,20 @@ impl GlGfxContext {
 	}
 
 	pub fn resize(&mut self, widget_width: i32, widget_height: i32) -> Result<()> {
-		self.width = widget_width as gfx::texture::Size;
-		self.height = widget_height as gfx::texture::Size;
+		let new_width = widget_width as gfx::texture::Size;
+		let new_height = widget_height as gfx::texture::Size;
+		if new_width != self.width || new_height != self.height {
+			let (frame_buffer_source, frame_buffer, depth_buffer) = self
+				.factory
+				.create_gtk_compatible_targets(new_width, new_height)?;
+
+			self.width = new_width;
+			self.height = new_height;
+			self.frame_buffer_source = frame_buffer_source;
+			self.frame_buffer = frame_buffer;
+			self.depth_buffer = depth_buffer;
+		}
+
 		Ok(())
 	}
 

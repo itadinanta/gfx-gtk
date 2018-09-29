@@ -69,6 +69,15 @@ pub fn main() {
 		}
 	}
 
+	glarea.connect_resize({
+		let gfx_context = gfx_context.clone();
+		move |_widget, width, height| {
+			if let Some(ref mut context) = *gfx_context.borrow_mut() {
+				context.resize(width, height).ok();
+			}
+		}
+	});
+
 	glarea.connect_render({
 		let gfx_context = gfx_context.clone();
 		move |_widget, _gl_context| {
