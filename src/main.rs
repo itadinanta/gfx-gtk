@@ -202,11 +202,11 @@ pub fn main() {
 		unsafe {
 			match DynamicLibrary::open(None).unwrap().symbol(s) {
 				Ok(v) => {
-					println!("Loaded {} as {:?}", s, v);
+					//println!("Loaded {} as {:?}", s, v);
 					v
 				}
 				Err(e) => {
-					println!("{:?}", e);
+					//println!("{:?}", e);
 					ptr::null()
 				}
 			}
@@ -217,7 +217,7 @@ pub fn main() {
 
 	fn get_proc_addr(s: &str) -> *const std::ffi::c_void {
 		let v = epoxy::get_proc_addr(s);
-		println!("Loaded {} as {:?}", s, v);
+		//println!("Loaded {} as {:?}", s, v);
 		v
 	};
 
@@ -238,17 +238,11 @@ pub fn main() {
 
 		let allocation = widget.get_allocation();
 
-		let (mut device, mut factory) = gfx_device_gl::create(get_proc_addr);
+		let (device, mut factory) = gfx_device_gl::create(get_proc_addr);
 		let encoder = factory.create_command_buffer().into();
 		let (frame_buffer_source, frame_buffer, depth_buffer) = factory
 			.create_surfaces(allocation.width as u16, allocation.height as u16)
 			.unwrap();
-		//gfx_device_gl::create_main_targets_raw(dim, color_format.0, depthstencil_format.0);
-		//		let handle_manager: gfx::handle::Manager<GlResources> = gfx::handle::Manager::new();
-		let mut attached_color = 0;
-		unsafe {
-			device.with_gl(|gl| gl.GetIntegerv(gl::DRAW_FRAMEBUFFER_BINDING, &mut attached_color))
-		};
 
 		*gfx_context_clone.borrow_mut() = Some(GlGfxContext {
 			//			gl_context,
@@ -264,20 +258,51 @@ pub fn main() {
 	});
 
 	let gfx_context_clone = gfx_context.clone();
-	glarea.connect_render(move |widget, gl_context| {
+	glarea.connect_render(move |widget, _gl_context| {
 		let size = widget.get_allocation();
 		if let Some(ref mut context) = *gfx_context_clone.borrow_mut() {
+			fn get_current_draw_framebuffer_name() -> u32 {
+				let mut framebuffer_name = 0;
+				unsafe {
+					epoxy::GetIntegerv(epoxy::DRAW_FRAMEBUFFER_BINDING, &mut framebuffer_name);
+				}
+				framebuffer_name as u32
+			}
+
+			fn get_current_renderbuffer_binding() -> u32 {
+				let mut renderbuffer_binding = 0;
+				unsafe {
+					epoxy::GetIntegerv(epoxy::RENDERBUFFER_BINDING, &mut renderbuffer_binding);
+				}
+				renderbuffer_binding as u32
+			}
+
+			// we need to keep track of the framebuffer Gtk wants to render to,
+			// which has been bound in the current gl_context, by the GlArea machinery
+			let gtk_framebuffer_name = get_current_draw_framebuffer_name();
+			let gtk_renderbuffer_binding = get_current_renderbuffer_binding();
+			// we do some GFX rendering, will knacker the buffer bindings but end up with a surface
+			// we can blit from
 			context.render();
+			// we have a full frame here and GFX shouldn't have thrown away the current
+			// framebuffer bindings, yet, so we can grab it
+			let gfx_framebuffer_name = get_current_draw_framebuffer_name();
 			unsafe {
-				epoxy::BindFramebuffer(epoxy::READ_FRAMEBUFFER, 1);
-				epoxy::BindFramebuffer(epoxy::DRAW_FRAMEBUFFER, 2);
-				epoxy::FramebufferRenderbuffer(
-					epoxy::FRAMEBUFFER,
+				// we want the framebuffer from Gfx (which we have just got) as the blit source
+				epoxy::BindFramebuffer(epoxy::READ_FRAMEBUFFER, gfx_framebuffer_name);
+				// and the framebuffer from Gtk (which we have saved earlier) as the destination
+				epoxy::BindFramebuffer(epoxy::DRAW_FRAMEBUFFER, gtk_framebuffer_name);
+				// we need to re-attach the color attachment buffer as well
+				epoxy::NamedFramebufferRenderbuffer(
+					gtk_framebuffer_name,
 					epoxy::COLOR_ATTACHMENT0,
 					epoxy::RENDERBUFFER,
-					1,
+					gtk_renderbuffer_binding,
 				);
-
+				// And finally, we blit the GFX framebuffer onto the GlArea framebuffer.
+				// This is wasteful as the GlArea code already does this for its own off-screen
+				// framebuffer target but we have no means to blit directly to the screen backbuffer
+				// as it happens under the hood within the GlArea rendering code
 				epoxy::BlitFramebuffer(
 					0,
 					0,
