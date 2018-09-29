@@ -25,4 +25,4 @@ gfx = "0.17"
 gfx_device_gl = "0.15"
 
 [dev-dependencies]
-cgmath = "*"
+cgmath = "0.16"
