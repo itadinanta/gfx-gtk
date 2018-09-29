@@ -7,3 +7,4 @@ mingw-w64-*.pkg.tar.xz
 .MTREE
 .PKGINFO
 *.trace
+Cargo.lock
