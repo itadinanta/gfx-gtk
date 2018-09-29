@@ -1,17 +1,11 @@
+extern crate gl;
 extern crate epoxy;
 extern crate gdk;
 extern crate gfx;
-extern crate gl;
 extern crate gtk;
 extern crate libc;
 extern crate shared_library;
 
-use gdk::GLContextExt;
-use gdk::WindowExt;
-use gfx::format::Formatted;
-use gfx::memory::Typed;
-use gfx::traits::FactoryExt;
-use gfx::{format, handle, texture, Device, Encoder, Factory};
 use gfx_device_gl;
 use gtk::traits::*;
 use gtk::Inhibit;
@@ -69,7 +63,7 @@ where
 	//	gl_context: gdk::GLContext,
 	device: D,
 	factory: F,
-	encoder: Encoder<D::Resources, D::CommandBuffer>,
+	encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
 	frame_buffer_source: gfx::handle::ShaderResourceView<D::Resources, [f32; 4]>,
 	frame_buffer: gfx::handle::RenderTargetView<D::Resources, ScreenColorFormat>,
 	depth_buffer: gfx::handle::DepthStencilView<D::Resources, ScreenDepthFormat>,
@@ -90,7 +84,7 @@ pub trait Renderer {
 impl<D, F> Renderer for GfxContext<D, F>
 where
 	D: gfx::Device,
-	F: Factory<D::Resources>,
+	F: gfx::Factory<D::Resources>,
 {
 	fn render(&mut self) {
 		self.encoder
@@ -182,7 +176,7 @@ trait RenderFactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 
 impl<F, R> RenderFactoryExt<R> for F
 where
-	F: Factory<R>,
+	F: gfx::Factory<R>,
 	R: gfx::Resources,
 {
 }

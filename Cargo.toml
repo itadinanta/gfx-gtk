@@ -8,22 +8,14 @@ edition = "2018"
 name="gfx-gtk"
 path="src/main.rs"
 
-[[bin]]
-name="glarea"
-path="src/glarea.rs"
-
-
 [dependencies]
-libc = "*"
+libc = "0.2"
 epoxy = "0.0.4"
 shared_library = "*"
-glium = "*"
-gl = "*"
-glutin = "*"
-gtk = { version = "*", features=["v3_16"] }
-gdk = { version = "*", features=["v3_16"] }
+gtk = { version = "0.5", features=["v3_16"] }
+gdk = { version = "0.9", features=["v3_16"] }
+gl = "0.10"
 gfx = "0.17"
-gfx_core = "0.8"
 gfx_device_gl = "0.15"
 
 # gfx_window_glutin = { version = "*", path="../gfx_window_glutin" }
