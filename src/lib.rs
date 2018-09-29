@@ -1,3 +1,4 @@
+#![feature(tool_lints)]
 extern crate epoxy;
 extern crate gdk;
 extern crate gfx;
@@ -150,10 +151,7 @@ fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 			.unwrap()
 			.symbol(s)
 		{
-			Ok(v) => {
-				//println!("Loaded {} as {:?}", s, v);
-				v
-			}
+			Ok(v) => v,
 			Err(e) => {
 				println!("{:?}", e);
 				ptr::null()
@@ -163,7 +161,7 @@ fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 }
 
 pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	// Workaround for missing functions
+	// Workaround for missing functions in gfx-rs
 	let s = match s {
 		"glBlendEquationSeparateiARB" => "glBlendEquationSeparatei",
 		"glBlendEquationiARB" => "glBlendEquationi",
@@ -174,7 +172,7 @@ pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 	};
 
 	let v = epoxy::get_proc_addr(s);
-	if (v.is_null()) {
+	if v.is_null() {
 		println!("Function {} is missing {:?}", s, v);
 	}
 	v
@@ -192,6 +190,7 @@ pub enum GlRenderCallbackStatus {
 }
 
 pub trait GlRenderCallback {
+	#[allow(clippy::too_many_arguments)]
 	fn render(
 		&mut self,
 		width: i32,
@@ -298,8 +297,8 @@ impl GlGfxContext {
 
 		GlRenderCallback::render(
 			render_callback,
-			self.width as i32,
-			self.height as i32,
+			i32::from(self.width),
+			i32::from(self.height),
 			&mut self.device,
 			&mut self.factory,
 			&mut self.encoder,
@@ -329,12 +328,12 @@ impl GlGfxContext {
 			gl::BlitFramebuffer(
 				0,
 				0,
-				self.width as i32,
-				self.height as i32,
+				i32::from(self.width),
+				i32::from(self.height),
 				0,
 				0,
-				self.width as i32,
-				self.height as i32,
+				i32::from(self.width),
+				i32::from(self.height),
 				gl::COLOR_BUFFER_BIT,
 				gl::NEAREST,
 			);

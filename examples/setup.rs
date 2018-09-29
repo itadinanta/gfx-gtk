@@ -172,7 +172,7 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 			cgmath::Vector3::new(0., 1.0, 0.),
 		);
 		let transform = (cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, -2.0))
-			* cgmath::Matrix4::from_angle_y(self.model_yaw)).into();
+			* cgmath::Matrix4::from_angle_y(-self.model_yaw)).into();
 
 		encoder.update_constant_buffer(
 			&self.camera,
@@ -205,10 +205,9 @@ pub fn main() {
 		return;
 	}
 
-	let window = Window::new(gtk::WindowType::Toplevel);
-	let glarea = gtk::GLArea::new();
-
 	gfx_gtk::load();
+
+	let window = Window::new(gtk::WindowType::Toplevel);
 
 	window.connect_delete_event(|_, _| {
 		gtk::main_quit();
@@ -218,6 +217,7 @@ pub fn main() {
 	let gfx_context: Rc<RefCell<Option<GlGfxContext>>> = Rc::new(RefCell::new(None));
 	let render_callback: Rc<RefCell<Option<SimpleRenderCallback>>> = Rc::new(RefCell::new(None));
 
+	let glarea = gtk::GLArea::new();
 	glarea.connect_realize({
 		let gfx_context = gfx_context.clone();
 		let render_callback = render_callback.clone();
@@ -263,12 +263,8 @@ pub fn main() {
 		}
 	});
 
-	window.set_title("GLArea with Gtk rendering Example");
-	window.set_default_size(400, 400);
-	let v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-	let slider = gtk::Scale::new_with_range(gtk::Orientation::Horizontal, -180.0, 180.0, 0.1);
+	let slider = gtk::Scale::new_with_range(gtk::Orientation::Horizontal, -75.0, 75.0, 0.1);
 	slider.set_value(0.0);
-
 	slider.connect_value_changed({
 		let render_callback = render_callback.clone();
 		let glarea = glarea.downgrade();
@@ -282,6 +278,9 @@ pub fn main() {
 		}
 	});
 
+	window.set_title("GLArea with Gtk rendering Example");
+	window.set_default_size(400, 400);
+	let v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 	v_box.pack_start(&slider, false, false, 0);
 	v_box.pack_start(&glarea, true, true, 0);
 
