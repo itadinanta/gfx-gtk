@@ -6,8 +6,8 @@ keywords = ["gfx", "gtk", "glarea", "epoxy", "opengl"]
 edition = "2018"
 description = "Integration helper for embedding GFX rendering in a gtk::GlArea"
 repository = "https://github.com/itadinanta/gfx-gtk"
-# publish = false
 license = "Apache-2.0"
+publish = false # insurance against accidents
 
 [lib]
 name="gfx_gtk"
@@ -16,7 +16,8 @@ path="src/lib.rs"
 
 [dependencies]
 libc = "0.2"
-epoxy = "0.0.4"
+# epoxy = "0.0.4"
+epoxy = { git = "https://github.com/norru/epoxy-rs", tag="tags/ARB_draw_buffer_Blend" }
 shared_library = "0.1"
 gtk = { version = "0.5", features=["v3_16"] }
 gdk = { version = "0.9", features=["v3_16"] }

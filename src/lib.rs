@@ -8,6 +8,7 @@ extern crate libc;
 extern crate shared_library;
 
 use gfx_device_gl;
+use std::path::Path;
 use std::ptr;
 
 pub type Rgba = [f32; 4];
@@ -147,7 +148,12 @@ where
 
 fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 	unsafe {
-		match shared_library::dynamic_library::DynamicLibrary::open(None)
+		#[cfg(not(windows))]
+		let lib_path = None;
+		#[cfg(windows)]
+		let lib_path = Some(Path::new("libepoxy-0.dll"));
+
+		match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
 			.unwrap()
 			.symbol(s)
 		{
@@ -161,16 +167,6 @@ fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 }
 
 pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	// Workaround for missing functions in gfx-rs
-	let s = match s {
-		"glBlendEquationSeparateiARB" => "glBlendEquationSeparatei",
-		"glBlendEquationiARB" => "glBlendEquationi",
-		"glBlendFuncSeparateiARB" => "glBlendFuncSeparatei",
-		"glBlendFunciARB" => "glBlendFunci",
-
-		_ => s,
-	};
-
 	let v = epoxy::get_proc_addr(s);
 	if v.is_null() {
 		println!("Function {} is missing {:?}", s, v);
