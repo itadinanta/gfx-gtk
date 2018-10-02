@@ -146,6 +146,58 @@ where
 {
 }
 
+trait ProcLoader {
+	fn get_proc_addr_from(&self, s: &str) -> *const std::ffi::c_void;
+}
+
+struct DllProcLoader {}
+
+impl ProcLoader for DllProcLoader {
+	fn get_proc_addr_from(&self, s: &str) -> *const std::ffi::c_void {
+		unsafe {
+			#[cfg(not(windows))]
+			let lib_path = None;
+			#[cfg(windows)]
+			let lib_path = Some(Path::new("libepoxy-0.dll"));
+
+			match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
+				.unwrap()
+				.symbol(s)
+			{
+				Ok(v) => v,
+				Err(e) => {
+					println!("{:?}", e);
+					ptr::null()
+				}
+			}
+		}
+	}
+}
+
+struct FailoverProcLoader {
+	loaders: Vec<Box<ProcLoader>>,
+}
+
+fn get_proc_addr_from(s: &str) -> *const std::ffi::c_void {
+	unsafe {
+		#[cfg(not(windows))]
+		let lib_path = None;
+		#[cfg(windows)]
+		let lib_path = Some(Path::new("libepoxy-0.dll"));
+
+		match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
+			.unwrap()
+			.symbol(s)
+		{
+			Ok(v) => v,
+			Err(e) => {
+				println!("{:?}", e);
+				ptr::null()
+			}
+		}
+	}
+}
+
 fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 	unsafe {
 		#[cfg(not(windows))]
