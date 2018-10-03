@@ -1,4 +1,7 @@
 #![feature(tool_lints)]
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
+
 extern crate epoxy;
 extern crate gdk;
 extern crate gfx;
@@ -8,6 +11,7 @@ extern crate libc;
 extern crate shared_library;
 
 use gfx_device_gl;
+use std::ops::Fn;
 use std::path::Path;
 use std::ptr;
 
@@ -146,75 +150,55 @@ where
 {
 }
 
+type LibPtr = *const std::ffi::c_void;
+
 trait ProcLoader {
-	fn get_proc_addr_from(&self, s: &str) -> *const std::ffi::c_void;
+	fn get_proc_addr(&self, s: &str) -> Option<LibPtr>;
 }
 
-struct DllProcLoader {}
+struct DllProcLoader {
+	lib: Option<shared_library::dynamic_library::DynamicLibrary>,
+}
+
+impl DllProcLoader {
+	fn open(lib_path: &Path) -> Self {
+		DllProcLoader {
+			lib: shared_library::dynamic_library::DynamicLibrary::open(Some(lib_path)).ok(),
+		}
+	}
+	fn current_module() -> Self {
+		DllProcLoader {
+			lib: shared_library::dynamic_library::DynamicLibrary::open(None).ok(),
+		}
+	}
+}
 
 impl ProcLoader for DllProcLoader {
-	fn get_proc_addr_from(&self, s: &str) -> *const std::ffi::c_void {
-		unsafe {
-			#[cfg(not(windows))]
-			let lib_path = None;
-			#[cfg(windows)]
-			let lib_path = Some(Path::new("libepoxy-0.dll"));
-
-			match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
-				.unwrap()
-				.symbol(s)
-			{
-				Ok(v) => v,
+	fn get_proc_addr(&self, s: &str) -> Option<LibPtr> {
+		self.lib
+			.as_ref()
+			.and_then(|l| match unsafe { l.symbol(s) } {
+				Ok(v) => Some(v as LibPtr),
 				Err(e) => {
 					println!("{:?}", e);
-					ptr::null()
+					None
 				}
-			}
-		}
+			})
 	}
 }
 
-struct FailoverProcLoader {
-	loaders: Vec<Box<ProcLoader>>,
-}
+struct Failover<A, B>(A, B)
+where
+	A: ProcLoader,
+	B: ProcLoader;
 
-fn get_proc_addr_from(s: &str) -> *const std::ffi::c_void {
-	unsafe {
-		#[cfg(not(windows))]
-		let lib_path = None;
-		#[cfg(windows)]
-		let lib_path = Some(Path::new("libepoxy-0.dll"));
-
-		match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
-			.unwrap()
-			.symbol(s)
-		{
-			Ok(v) => v,
-			Err(e) => {
-				println!("{:?}", e);
-				ptr::null()
-			}
-		}
-	}
-}
-
-fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	unsafe {
-		#[cfg(not(windows))]
-		let lib_path = None;
-		#[cfg(windows)]
-		let lib_path = Some(Path::new("libepoxy-0.dll"));
-
-		match shared_library::dynamic_library::DynamicLibrary::open(lib_path)
-			.unwrap()
-			.symbol(s)
-		{
-			Ok(v) => v,
-			Err(e) => {
-				println!("{:?}", e);
-				ptr::null()
-			}
-		}
+impl<A, B> ProcLoader for Failover<A, B>
+where
+	A: ProcLoader,
+	B: ProcLoader,
+{
+	fn get_proc_addr(&self, s: &str) -> Option<LibPtr> {
+		self.0.get_proc_addr(s).or_else(|| self.1.get_proc_addr(s))
 	}
 }
 
@@ -227,7 +211,11 @@ pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
 }
 
 pub fn load() {
-	epoxy::load_with(dynamic_library_get_proc_addr);
+	let loader = Failover(
+		DllProcLoader::current_module(),
+		DllProcLoader::open(Path::new("libepoxy-0")),
+	);
+	epoxy::load_with(move |s| loader.get_proc_addr(s).unwrap_or_else(|| ptr::null()));
 	gl::load_with(epoxy_get_proc_addr);
 }
 
