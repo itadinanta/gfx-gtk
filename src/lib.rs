@@ -1,6 +1,4 @@
 #![feature(tool_lints)]
-#![feature(unboxed_closures)]
-#![feature(fn_traits)]
 
 extern crate epoxy;
 extern crate gdk;
@@ -10,10 +8,11 @@ extern crate gtk;
 extern crate libc;
 extern crate shared_library;
 
+mod dl;
+
 use gfx_device_gl;
 use std::ops::Fn;
 use std::path::Path;
-use std::ptr;
 
 pub type Rgba = [f32; 4];
 pub type Float4 = [f32; 4];
@@ -150,72 +149,19 @@ where
 {
 }
 
-type LibPtr = *const std::ffi::c_void;
-
-trait ProcLoader {
-	fn get_proc_addr(&self, s: &str) -> Option<LibPtr>;
-}
-
-struct DllProcLoader {
-	lib: Option<shared_library::dynamic_library::DynamicLibrary>,
-}
-
-impl DllProcLoader {
-	fn open(lib_path: &Path) -> Self {
-		DllProcLoader {
-			lib: shared_library::dynamic_library::DynamicLibrary::open(Some(lib_path)).ok(),
-		}
-	}
-	fn current_module() -> Self {
-		DllProcLoader {
-			lib: shared_library::dynamic_library::DynamicLibrary::open(None).ok(),
-		}
-	}
-}
-
-impl ProcLoader for DllProcLoader {
-	fn get_proc_addr(&self, s: &str) -> Option<LibPtr> {
-		self.lib
-			.as_ref()
-			.and_then(|l| match unsafe { l.symbol(s) } {
-				Ok(v) => Some(v as LibPtr),
-				Err(e) => {
-					println!("{:?}", e);
-					None
-				}
-			})
-	}
-}
-
-struct Failover<A, B>(A, B)
-where
-	A: ProcLoader,
-	B: ProcLoader;
-
-impl<A, B> ProcLoader for Failover<A, B>
-where
-	A: ProcLoader,
-	B: ProcLoader,
-{
-	fn get_proc_addr(&self, s: &str) -> Option<LibPtr> {
-		self.0.get_proc_addr(s).or_else(|| self.1.get_proc_addr(s))
-	}
-}
-
-pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	let v = epoxy::get_proc_addr(s);
-	if v.is_null() {
-		println!("Function {} is missing {:?}", s, v);
-	}
-	v
-}
-
 pub fn load() {
+	use self::dl::{epoxy_get_proc_addr, fn_from, DlProcLoader, Failover};
 	let loader = Failover(
-		DllProcLoader::current_module(),
-		DllProcLoader::open(Path::new("libepoxy-0")),
+		DlProcLoader::current_module(),
+		Failover(
+			DlProcLoader::open(Path::new("libepoxy-0")),
+			Failover(
+				DlProcLoader::open(Path::new("libepoxy0")),
+				DlProcLoader::open(Path::new("libepoxy")),
+			),
+		),
 	);
-	epoxy::load_with(move |s| loader.get_proc_addr(s).unwrap_or_else(|| ptr::null()));
+	epoxy::load_with(fn_from(loader));
 	gl::load_with(epoxy_get_proc_addr);
 }
 
@@ -241,7 +187,7 @@ pub trait GlRenderCallback {
 
 impl GlGfxContext {
 	pub fn new(widget_width: i32, widget_height: i32) -> Result<GlGfxContext> {
-		Self::new_with_loader(widget_width, widget_height, &epoxy_get_proc_addr)
+		Self::new_with_loader(widget_width, widget_height, &dl::epoxy_get_proc_addr)
 	}
 
 	pub fn new_with_loader(
