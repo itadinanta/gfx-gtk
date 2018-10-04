@@ -17,7 +17,7 @@ path="src/lib.rs"
 [dependencies]
 libc = "0.2"
 # epoxy = "0.0.4"
-epoxy = { git = "https://github.com/norru/epoxy-rs", tag="tags/ARB_draw_buffer_Blend" }
+epoxy = {git = "https://github.com/norru/epoxy-rs", branch = "feature/ARB_draw_buffers_blend"}
 shared_library = "0.1"
 gtk = { version = "0.5", features=["v3_16"] }
 gdk = { version = "0.9", features=["v3_16"] }
