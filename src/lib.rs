@@ -1,4 +1,5 @@
 #![feature(tool_lints)]
+
 extern crate epoxy;
 extern crate gdk;
 extern crate gfx;
@@ -7,8 +8,11 @@ extern crate gtk;
 extern crate libc;
 extern crate shared_library;
 
+mod dl;
+
 use gfx_device_gl;
-use std::ptr;
+use std::ops::Fn;
+use std::path::Path;
 
 pub type Rgba = [f32; 4];
 pub type Float4 = [f32; 4];
@@ -145,41 +149,19 @@ where
 {
 }
 
-fn dynamic_library_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	unsafe {
-		match shared_library::dynamic_library::DynamicLibrary::open(None)
-			.unwrap()
-			.symbol(s)
-		{
-			Ok(v) => v,
-			Err(e) => {
-				println!("{:?}", e);
-				ptr::null()
-			}
-		}
-	}
-}
-
-pub fn epoxy_get_proc_addr(s: &str) -> *const std::ffi::c_void {
-	// Workaround for missing functions in gfx-rs
-	let s = match s {
-		"glBlendEquationSeparateiARB" => "glBlendEquationSeparatei",
-		"glBlendEquationiARB" => "glBlendEquationi",
-		"glBlendFuncSeparateiARB" => "glBlendFuncSeparatei",
-		"glBlendFunciARB" => "glBlendFunci",
-
-		_ => s,
-	};
-
-	let v = epoxy::get_proc_addr(s);
-	if v.is_null() {
-		println!("Function {} is missing {:?}", s, v);
-	}
-	v
-}
-
 pub fn load() {
-	epoxy::load_with(dynamic_library_get_proc_addr);
+	use self::dl::{epoxy_get_proc_addr, fn_from, DlProcLoader, Failover};
+	let loader = Failover(
+		DlProcLoader::current_module(),
+		Failover(
+			DlProcLoader::open(Path::new("libepoxy-0")),
+			Failover(
+				DlProcLoader::open(Path::new("libepoxy0")),
+				DlProcLoader::open(Path::new("libepoxy")),
+			),
+		),
+	);
+	epoxy::load_with(fn_from(loader));
 	gl::load_with(epoxy_get_proc_addr);
 }
 
@@ -205,7 +187,7 @@ pub trait GlRenderCallback {
 
 impl GlGfxContext {
 	pub fn new(widget_width: i32, widget_height: i32) -> Result<GlGfxContext> {
-		Self::new_with_loader(widget_width, widget_height, &epoxy_get_proc_addr)
+		Self::new_with_loader(widget_width, widget_height, &dl::epoxy_get_proc_addr)
 	}
 
 	pub fn new_with_loader(
