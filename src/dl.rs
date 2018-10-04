@@ -38,10 +38,7 @@ impl ProcLoader for DlProcLoader {
 			.as_ref()
 			.and_then(|l| match unsafe { l.symbol(s) } {
 				Ok(v) => Some(v as LibPtr),
-				Err(e) => {
-					println!("{:?}", e);
-					None
-				}
+				Err(_) => None,
 			})
 	}
 }
@@ -61,10 +58,12 @@ where
 	}
 }
 
-pub fn epoxy_get_proc_addr(s: &str) -> LibPtr {
+pub fn debug_get_proc_addr(s: &str) -> LibPtr {
 	let v = epoxy::get_proc_addr(s);
 	if v.is_null() {
-		println!("Function {} is missing {:?}", s, v);
+		println!("Symbol not found: {}", s);
+	} else {
+		println!("Loaded symbol: {} @ {:?}", s, v);
 	}
 	v
 }

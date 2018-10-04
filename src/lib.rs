@@ -150,7 +150,7 @@ where
 }
 
 pub fn load() {
-	use self::dl::{epoxy_get_proc_addr, fn_from, DlProcLoader, Failover};
+	use self::dl::{fn_from, DlProcLoader, Failover};
 	let loader = Failover(
 		DlProcLoader::current_module(),
 		Failover(
@@ -162,7 +162,23 @@ pub fn load() {
 		),
 	);
 	epoxy::load_with(fn_from(loader));
-	gl::load_with(epoxy_get_proc_addr);
+	gl::load_with(epoxy::get_proc_addr);
+}
+
+pub fn debug_load() {
+	use self::dl::{debug_get_proc_addr, fn_from, DlProcLoader, Failover};
+	let loader = Failover(
+		DlProcLoader::current_module(),
+		Failover(
+			DlProcLoader::open(Path::new("libepoxy-0")),
+			Failover(
+				DlProcLoader::open(Path::new("libepoxy0")),
+				DlProcLoader::open(Path::new("libepoxy")),
+			),
+		),
+	);
+	epoxy::load_with(fn_from(loader));
+	gl::load_with(debug_get_proc_addr);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -187,7 +203,7 @@ pub trait GlRenderCallback {
 
 impl GlGfxContext {
 	pub fn new(widget_width: i32, widget_height: i32) -> Result<GlGfxContext> {
-		Self::new_with_loader(widget_width, widget_height, &dl::epoxy_get_proc_addr)
+		Self::new_with_loader(widget_width, widget_height, &epoxy::get_proc_addr)
 	}
 
 	pub fn new_with_loader(
