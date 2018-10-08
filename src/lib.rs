@@ -45,18 +45,38 @@ pub mod formats {
 }
 
 #[allow(unused)]
+pub struct GfxCallbackContext<D, F>
+where
+	D: gfx::Device,
+	F: gfx::Factory<D::Resources>,
+{
+	pub device: D,
+	pub factory: F,
+	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
+}
+
+impl<D, F> GfxCallbackContext<D, F>
+where
+	D: gfx::Device,
+	F: gfx::Factory<D::Resources>,
+{
+	pub fn flush(&mut self) {
+		self.encoder.flush(&mut self.device);
+	}
+}
+
+#[allow(unused)]
 pub struct GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 {
-	device: D,
-	factory: F,
-	encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
+	gfx_context: GfxCallbackContext<D, F>,
 	width: gfx::texture::Size,
 	height: gfx::texture::Size,
-	frame_buffer_source: gfx::handle::ShaderResourceView<D::Resources, Rgba>,
-	frame_buffer: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
+	render_target_source: gfx::handle::ShaderResourceView<D::Resources, Rgba>,
+	render_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
+	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
 	depth_buffer: gfx::handle::DepthStencilView<D::Resources, formats::RenderDepthFormat>,
 }
 
@@ -65,6 +85,8 @@ pub type GlFactory = gfx_device_gl::Factory;
 pub type GlCommandBuffer = gfx_device_gl::CommandBuffer;
 pub type GlResources = <GlDevice as gfx::Device>::Resources;
 pub type GlEncoder = gfx::Encoder<GlResources, GlCommandBuffer>;
+pub type GlFrameBufferTextureSrc =
+	gfx::handle::RenderTargetView<GlResources, formats::RenderColorFormat>;
 pub type GlFrameBuffer = gfx::handle::RenderTargetView<GlResources, formats::RenderColorFormat>;
 pub type GlDepthBuffer = gfx::handle::DepthStencilView<GlResources, formats::RenderDepthFormat>;
 pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
@@ -183,22 +205,51 @@ pub fn debug_load() {
 
 #[derive(Clone, Copy, Debug)]
 pub enum GlRenderCallbackStatus {
-	Ok,
+	Complete,
 	NoFlush,
+}
+
+pub type GlCallbackContext = GfxCallbackContext<GlDevice, GlFactory>;
+
+#[derive(Clone)]
+pub struct Viewport {
+	pub width: i32,
+	pub height: i32,
+}
+
+impl Viewport {
+	pub fn aspect_ratio(&self) -> f32 {
+		self.width as f32 / self.height as f32
+	}
 }
 
 pub trait GlRenderCallback {
 	#[allow(clippy::too_many_arguments)]
 	fn render(
 		&mut self,
-		width: i32,
-		height: i32,
-		device: &mut GlDevice,
-		factory: &mut GlFactory,
-		encoder: &mut GlEncoder,
-		frame_buffer: &GlFrameBuffer,
+		gfx_context: &mut GlCallbackContext,
+		viewport: Viewport,
+		render_target: &GlFrameBuffer,
 		depth_buffer: &GlDepthBuffer,
-	) -> GlRenderCallbackStatus;
+	) -> Result<GlRenderCallbackStatus>;
+
+	fn postprocess(
+		&mut self,
+		gfx_context: &mut GlCallbackContext,
+		viewport: Viewport,
+		render_screen: GlFrameBufferTextureSrc,
+		post_target: &GlFrameBuffer,
+	) -> Result<GlRenderCallbackStatus> {
+		Ok(GlRenderCallbackStatus::Complete)
+	}
+
+	fn resize(
+		&mut self,
+		gfx_context: &mut GlCallbackContext,
+		viewport: Viewport,
+	) -> Result<GlRenderCallbackStatus> {
+		Ok(GlRenderCallbackStatus::Complete)
+	}
 }
 
 impl GlGfxContext {
@@ -217,31 +268,32 @@ impl GlGfxContext {
 		let encoder = factory.create_command_buffer().into();
 		let width = widget_width as gfx::texture::Size;
 		let height = widget_height as gfx::texture::Size;
-		let (frame_buffer_source, frame_buffer, depth_buffer) =
+		let (render_target_source, render_target, depth_buffer) =
 			factory.create_gtk_compatible_targets(width, height)?;
 
+		let (_, _, postprocess_target) = factory.create_gtk_compatible_render_target(
+			formats::MSAA_MODE,
+			width as u16,
+			height as u16,
+		)?;
+
 		Ok(GfxContext {
-			device,
-			factory,
-			encoder,
+			gfx_context: GlCallbackContext {
+				device,
+				factory,
+				encoder,
+			},
 			width,
 			height,
-			frame_buffer_source,
-			frame_buffer,
+			render_target_source,
+			render_target,
 			depth_buffer,
+			postprocess_target,
 		})
 	}
 
-	pub fn encoder_mut(&mut self) -> &mut GlEncoder {
-		&mut self.encoder
-	}
-
-	pub fn device_mut(&mut self) -> &mut GlDevice {
-		&mut self.device
-	}
-
-	pub fn factory_mut(&mut self) -> &mut GlFactory {
-		&mut self.factory
+	pub fn gfx_context_mut(&mut self) -> &mut GlCallbackContext {
+		&mut self.gfx_context
 	}
 
 	pub fn size(&self) -> (gfx::texture::Size, gfx::texture::Size) {
@@ -253,13 +305,20 @@ impl GlGfxContext {
 		let new_height = widget_height as gfx::texture::Size;
 		if new_width != self.width || new_height != self.height {
 			let (frame_buffer_source, frame_buffer, depth_buffer) = self
+				.gfx_context
 				.factory
 				.create_gtk_compatible_targets(new_width, new_height)?;
 
+			let (_, _, postprocess_target) = self
+				.gfx_context
+				.factory
+				.create_gtk_compatible_render_target(formats::MSAA_MODE, new_width, new_height)?;
+
 			self.width = new_width;
 			self.height = new_height;
-			self.frame_buffer_source = frame_buffer_source;
-			self.frame_buffer = frame_buffer;
+			self.render_target_source = frame_buffer_source;
+			self.render_target = frame_buffer;
+			self.postprocess_target = postprocess_target;
 			self.depth_buffer = depth_buffer;
 		}
 
@@ -292,17 +351,18 @@ impl GlGfxContext {
 		let gtk_renderbuffer_binding = get_current_renderbuffer_binding();
 		// we do some GFX rendering, will knacker the buffer bindings but end up with a surface
 		// we can blit from
-
+		let viewport = Viewport {
+			width: i32::from(self.width),
+			height: i32::from(self.height),
+		};
 		GlRenderCallback::render(
 			render_callback,
-			i32::from(self.width),
-			i32::from(self.height),
-			&mut self.device,
-			&mut self.factory,
-			&mut self.encoder,
-			&self.frame_buffer,
+			&mut self.gfx_context,
+			viewport.clone(),
+			&self.render_target,
 			&self.depth_buffer,
-		);
+		)
+		.ok(); // TOOD: handle error
 
 		// we have a full frame here and GFX shouldn't have thrown away the current
 		// framebuffer bindings, yet, so we can grab it
@@ -342,6 +402,6 @@ impl GlGfxContext {
 
 	fn cleanup(&mut self) {
 		use gfx::Device;
-		self.device.cleanup();
+		self.gfx_context.device.cleanup();
 	}
 }

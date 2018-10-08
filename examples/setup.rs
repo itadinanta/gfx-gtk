@@ -25,6 +25,18 @@ const COLOR_MAGENTA: gfx_gtk::Rgba = [1., 0., 1., 1.];
 const COLOR_WHITE: gfx_gtk::Rgba = [1., 1., 1., 1.];
 
 gfx_defines!(
+	vertex BlitVertex {
+		pos: [f32; 2] = "a_Pos",
+		tex_coord: [f32; 2] = "a_TexCoord",
+	}
+	pipeline postprocess {
+		vbuf: gfx::VertexBuffer<BlitVertex> = (),
+		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
+		dst: gfx::RenderTarget<gfx_gtk::formats::RenderColorFormat> = "o_Color",
+	}
+);
+
+gfx_defines!(
 	vertex Vertex {
 		pos: [f32; 3] = "a_Pos",
 		color: [f32; 4] = "a_Color",
@@ -53,7 +65,8 @@ struct SimpleRenderCallback {
 
 	vertex_buffer: gfx::handle::Buffer<gfx_gtk::GlResources, Vertex>,
 	index_buffer: gfx::Slice<gfx_gtk::GlResources>,
-	pso: gfx::pso::PipelineState<gfx_gtk::GlResources, unlit::Meta>,
+	scene_pso: gfx::pso::PipelineState<gfx_gtk::GlResources, unlit::Meta>,
+	post_pso: gfx::pso::PipelineState<gfx_gtk::GlResources, postprocess::Meta>,
 	camera: gfx::handle::Buffer<gfx_gtk::GlResources, CameraArgs>,
 	model: gfx::handle::Buffer<gfx_gtk::GlResources, ModelArgs>,
 	clear_color: gfx_gtk::Rgba,
@@ -68,6 +81,32 @@ impl Vertex {
 		}
 	}
 }
+
+const POST_VERTEX_SHADER: &str = r"
+#version 150 core
+
+in vec2 a_Pos;
+in vec2 a_TexCoord;
+out vec2 v_TexCoord;
+
+void main() {
+	v_TexCoord = a_TexCoord;
+	gl_Position = vec4(a_Pos, 0.0, 1.0);
+}
+";
+
+const POST_PIXEL_SHADER: &str = r"
+#version 150 core
+
+uniform sampler2D t_Source;
+
+in vec2 v_TexCoord;
+out vec4 o_Color;
+
+void main() {
+	o_Color = texture(t_Source, v_TexCoord, 0);
+}
+";
 
 const VERTEX_SHADER: &str = r"
 // unlit.vert
@@ -115,7 +154,10 @@ void main() {
 ";
 
 impl SimpleRenderCallback {
-	fn new(factory: &mut gfx_gtk::GlFactory) -> gfx_gtk::Result<Self> {
+	fn new(
+		context: &mut gfx_gtk::GlCallbackContext,
+		_viewport: gfx_gtk::Viewport,
+	) -> gfx_gtk::Result<Self> {
 		let vertices = vec![
 			Vertex::new(-1., -1., COLOR_RED),
 			Vertex::new(-1., 1., COLOR_GREEN),
@@ -125,17 +167,29 @@ impl SimpleRenderCallback {
 
 		let indices = vec![0u16, 1, 2, 2, 3, 0];
 
-		let (vertex_buffer, index_buffer) =
-			factory.create_vertex_buffer_with_slice(vertices.as_slice(), indices.as_slice());
+		let (vertex_buffer, index_buffer) = context
+			.factory
+			.create_vertex_buffer_with_slice(vertices.as_slice(), indices.as_slice());
 
-		let camera = factory.create_constant_buffer(1);
-		let model = factory.create_constant_buffer(1);
-		let pso = factory
+		let camera = context.factory.create_constant_buffer(1);
+		let model = context.factory.create_constant_buffer(1);
+		let scene_pso = context
+			.factory
 			.create_pipeline_simple(
 				VERTEX_SHADER.as_bytes(),
 				PIXEL_SHADER.as_bytes(),
 				unlit::new(),
-			).unwrap();
+			)
+			.unwrap();
+
+		let post_pso = context
+			.factory
+			.create_pipeline_simple(
+				POST_VERTEX_SHADER.as_bytes(),
+				POST_PIXEL_SHADER.as_bytes(),
+				postprocess::new(),
+			)
+			.unwrap();
 
 		Ok(SimpleRenderCallback {
 			model_yaw: cgmath::Deg(0.),
@@ -143,7 +197,8 @@ impl SimpleRenderCallback {
 			index_buffer,
 			camera,
 			model,
-			pso,
+			scene_pso,
+			post_pso,
 			clear_color: COLOR_WHITE,
 			clear_depth: 1.,
 		})
@@ -153,18 +208,17 @@ impl SimpleRenderCallback {
 impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 	fn render(
 		&mut self,
-		width: i32,
-		height: i32,
-		device: &mut gfx_gtk::GlDevice,
-		_factory: &mut gfx_gtk::GlFactory,
-		encoder: &mut gfx_gtk::GlEncoder,
+		gfx_context: &mut gfx_gtk::GlCallbackContext,
+		viewport: gfx_gtk::Viewport,
 		frame_buffer: &gfx_gtk::GlFrameBuffer,
 		depth_buffer: &gfx_gtk::GlDepthBuffer,
-	) -> gfx_gtk::GlRenderCallbackStatus {
-		encoder.clear_depth(depth_buffer, self.clear_depth);
-		encoder.clear(frame_buffer, self.clear_color);
+	) -> gfx_gtk::Result<gfx_gtk::GlRenderCallbackStatus> {
+		gfx_context
+			.encoder
+			.clear_depth(depth_buffer, self.clear_depth);
+		gfx_context.encoder.clear(frame_buffer, self.clear_color);
 
-		let aspect_ratio = width as f32 / height as f32;
+		let aspect_ratio = viewport.aspect_ratio();
 		let camera_projection = cgmath::perspective(cgmath::Deg(90.0), aspect_ratio, 0.1, 200.0);
 		let camera_view = cgmath::Matrix4::look_at(
 			cgmath::Point3::new(0., 0., 0.),
@@ -172,19 +226,22 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 			cgmath::Vector3::new(0., 1.0, 0.),
 		);
 		let transform = (cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, -2.0))
-			* cgmath::Matrix4::from_angle_y(-self.model_yaw)).into();
+			* cgmath::Matrix4::from_angle_y(-self.model_yaw))
+		.into();
 
-		encoder.update_constant_buffer(
+		gfx_context.encoder.update_constant_buffer(
 			&self.camera,
 			&CameraArgs {
 				proj: camera_projection.into(),
 				view: camera_view.into(),
 			},
 		);
-		encoder.update_constant_buffer(&self.model, &ModelArgs { transform });
-		encoder.draw(
+		gfx_context
+			.encoder
+			.update_constant_buffer(&self.model, &ModelArgs { transform });
+		gfx_context.encoder.draw(
 			&self.index_buffer,
-			&self.pso,
+			&self.scene_pso,
 			&unlit::Data {
 				vbuf: self.vertex_buffer.clone(),
 				camera: self.camera.clone(),
@@ -194,8 +251,8 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 			},
 		);
 
-		encoder.flush(device);
-		gfx_gtk::GlRenderCallbackStatus::Ok
+		gfx_context.flush();
+		Ok(gfx_gtk::GlRenderCallbackStatus::Complete)
 	}
 }
 
@@ -232,8 +289,14 @@ pub fn main() {
 			let mut new_context =
 				gfx_gtk::GlGfxContext::new(allocation.width, allocation.height).ok();
 			if let Some(ref mut new_context) = new_context {
-				*render_callback.borrow_mut() =
-					SimpleRenderCallback::new(new_context.factory_mut()).ok();
+				*render_callback.borrow_mut() = SimpleRenderCallback::new(
+					new_context.gfx_context_mut(),
+					gfx_gtk::Viewport {
+						width: allocation.width,
+						height: allocation.height,
+					},
+				)
+				.ok();
 			}
 			*gfx_context.borrow_mut() = new_context;
 		}
