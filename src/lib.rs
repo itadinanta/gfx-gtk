@@ -85,8 +85,10 @@ pub type GlFactory = gfx_device_gl::Factory;
 pub type GlCommandBuffer = gfx_device_gl::CommandBuffer;
 pub type GlResources = <GlDevice as gfx::Device>::Resources;
 pub type GlEncoder = gfx::Encoder<GlResources, GlCommandBuffer>;
-pub type GlFrameBufferTextureSrc =
-	gfx::handle::RenderTargetView<GlResources, formats::RenderColorFormat>;
+pub type GlFrameBufferTextureSrc = gfx::handle::ShaderResourceView<
+	GlResources,
+	<formats::RenderColorFormat as gfx::format::Formatted>::View,
+>;
 pub type GlFrameBuffer = gfx::handle::RenderTargetView<GlResources, formats::RenderColorFormat>;
 pub type GlDepthBuffer = gfx::handle::DepthStencilView<GlResources, formats::RenderDepthFormat>;
 pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
@@ -237,7 +239,7 @@ pub trait GlRenderCallback {
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
 		viewport: Viewport,
-		render_screen: GlFrameBufferTextureSrc,
+		render_screen: &GlFrameBufferTextureSrc,
 		post_target: &GlFrameBuffer,
 	) -> Result<GlRenderCallbackStatus> {
 		Ok(GlRenderCallbackStatus::Complete)
@@ -361,6 +363,15 @@ impl GlGfxContext {
 			viewport.clone(),
 			&self.render_target,
 			&self.depth_buffer,
+		)
+		.ok(); // TOOD: handle error
+
+		GlRenderCallback::postprocess(
+			render_callback,
+			&mut self.gfx_context,
+			viewport.clone(),
+			&self.render_target_source,
+			&self.postprocess_target,
 		)
 		.ok(); // TOOD: handle error
 
