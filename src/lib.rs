@@ -9,6 +9,7 @@ extern crate libc;
 extern crate shared_library;
 
 mod dl;
+pub mod shaders;
 
 use gfx_device_gl;
 use std::ops::Fn;
@@ -41,7 +42,8 @@ pub mod formats {
 		gfx::handle::RenderTargetView<R, RenderColorFormat>,
 		gfx::handle::DepthStencilView<R, RenderDepthFormat>,
 	);
-	pub const MSAA_MODE: gfx::texture::AaMode = gfx::texture::AaMode::Single;
+	pub const MSAA_NONE: gfx::texture::AaMode = gfx::texture::AaMode::Single;
+	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
 
 #[allow(unused)]
@@ -53,6 +55,7 @@ where
 	pub device: D,
 	pub factory: F,
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
+	pub aa: gfx::texture::AaMode,
 }
 
 impl<D, F> GfxCallbackContext<D, F>
@@ -109,13 +112,13 @@ impl<T: std::fmt::Display> std::convert::From<T> for self::Error {
 pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 	fn create_gtk_compatible_targets(
 		&mut self,
+		aa: gfx::texture::AaMode,
 		width: gfx::texture::Size,
 		height: gfx::texture::Size,
 	) -> Result<formats::RenderSurfaceWithDepth<R>> {
 		let (_, color_resource, color_target) =
-			self.create_gtk_compatible_render_target(formats::MSAA_MODE, width, height)?;
-		let (_, _, depth_target) =
-			self.create_gtk_compatible_depth_target(formats::MSAA_MODE, width, height)?;
+			self.create_gtk_compatible_render_target(aa, width, height)?;
+		let (_, _, depth_target) = self.create_gtk_compatible_depth_target(aa, width, height)?;
 		Ok((color_resource, color_target, depth_target))
 	}
 
@@ -255,11 +258,16 @@ pub trait GlRenderCallback {
 }
 
 impl GlGfxContext {
-	pub fn new(widget_width: i32, widget_height: i32) -> Result<GlGfxContext> {
-		Self::new_with_loader(widget_width, widget_height, &epoxy::get_proc_addr)
+	pub fn new(
+		aa: gfx::texture::AaMode,
+		widget_width: i32,
+		widget_height: i32,
+	) -> Result<GlGfxContext> {
+		Self::new_with_loader(aa, widget_width, widget_height, &epoxy::get_proc_addr)
 	}
 
 	pub fn new_with_loader(
+		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
 		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
@@ -271,10 +279,10 @@ impl GlGfxContext {
 		let width = widget_width as gfx::texture::Size;
 		let height = widget_height as gfx::texture::Size;
 		let (render_target_source, render_target, depth_buffer) =
-			factory.create_gtk_compatible_targets(width, height)?;
+			factory.create_gtk_compatible_targets(aa, width, height)?;
 
 		let (_, _, postprocess_target) = factory.create_gtk_compatible_render_target(
-			formats::MSAA_MODE,
+			formats::MSAA_NONE,
 			width as u16,
 			height as u16,
 		)?;
@@ -284,6 +292,7 @@ impl GlGfxContext {
 				device,
 				factory,
 				encoder,
+				aa,
 			},
 			width,
 			height,
@@ -309,12 +318,12 @@ impl GlGfxContext {
 			let (frame_buffer_source, frame_buffer, depth_buffer) = self
 				.gfx_context
 				.factory
-				.create_gtk_compatible_targets(new_width, new_height)?;
+				.create_gtk_compatible_targets(self.gfx_context.aa, new_width, new_height)?;
 
 			let (_, _, postprocess_target) = self
 				.gfx_context
 				.factory
-				.create_gtk_compatible_render_target(formats::MSAA_MODE, new_width, new_height)?;
+				.create_gtk_compatible_render_target(formats::MSAA_NONE, new_width, new_height)?;
 
 			self.width = new_width;
 			self.height = new_height;

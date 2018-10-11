@@ -10,6 +10,7 @@ extern crate shared_library;
 
 use gfx::traits::FactoryExt;
 use gfx_gtk::GlGfxContext;
+use gfx_gtk::formats;
 use gtk::traits::*;
 use gtk::{Inhibit, ObjectExt, Window};
 use std::cell::RefCell;
@@ -286,8 +287,12 @@ pub fn main() {
 
 			let allocation = widget.get_allocation();
 
-			let mut new_context =
-				gfx_gtk::GlGfxContext::new(allocation.width, allocation.height).ok();
+			let mut new_context = gfx_gtk::GlGfxContext::new(
+				formats::MSAA_NONE,
+				allocation.width,
+				allocation.height,
+			)
+			.ok();
 			if let Some(ref mut new_context) = new_context {
 				*render_callback.borrow_mut() = SimpleRenderCallback::new(
 					new_context.gfx_context_mut(),
