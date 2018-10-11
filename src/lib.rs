@@ -55,7 +55,6 @@ where
 	pub device: D,
 	pub factory: F,
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
-	pub aa: gfx::texture::AaMode,
 }
 
 impl<D, F> GfxCallbackContext<D, F>
@@ -75,8 +74,7 @@ where
 	F: gfx::Factory<D::Resources>,
 {
 	gfx_context: GfxCallbackContext<D, F>,
-	width: gfx::texture::Size,
-	height: gfx::texture::Size,
+	viewport: Viewport,
 	render_target_source: gfx::handle::ShaderResourceView<D::Resources, Rgba>,
 	render_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
 	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
@@ -220,11 +218,34 @@ pub type GlCallbackContext = GfxCallbackContext<GlDevice, GlFactory>;
 pub struct Viewport {
 	pub width: i32,
 	pub height: i32,
+	pub target_width: i32,
+	pub target_height: i32,
+	pub aa: gfx::texture::AaMode,
 }
 
 impl Viewport {
 	pub fn aspect_ratio(&self) -> f32 {
 		self.width as f32 / self.height as f32
+	}
+
+	pub fn with_aa(aa: gfx::texture::AaMode, target_width: i32, target_height: i32) -> Self {
+		let (width, height) = Self::aa_size(aa, target_width, target_height);
+		Viewport {
+			width,
+			height,
+			target_width: target_width,
+			target_height: target_height,
+			aa,
+		}
+	}
+
+	fn aa_size(aa: gfx::texture::AaMode, width: i32, height: i32) -> (i32, i32) {
+		let mul = match aa {
+			gfx::texture::AaMode::Single => 1,
+			gfx::texture::AaMode::Multi(m) => m as i32,
+			_ => 0,
+		};
+		(width * mul, height * mul)
 	}
 }
 
@@ -233,7 +254,7 @@ pub trait GlRenderCallback {
 	fn render(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
-		viewport: Viewport,
+		viewport: &Viewport,
 		render_target: &GlFrameBuffer,
 		depth_buffer: &GlDepthBuffer,
 	) -> Result<GlRenderCallbackStatus>;
@@ -241,7 +262,7 @@ pub trait GlRenderCallback {
 	fn postprocess(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
-		viewport: Viewport,
+		viewport: &Viewport,
 		render_screen: &GlFrameBufferTextureSrc,
 		post_target: &GlFrameBuffer,
 	) -> Result<GlRenderCallbackStatus> {
@@ -276,26 +297,26 @@ impl GlGfxContext {
 
 		let (device, mut factory) = gfx_device_gl::create(get_proc_addr);
 		let encoder = factory.create_command_buffer().into();
-		let width = widget_width as gfx::texture::Size;
-		let height = widget_height as gfx::texture::Size;
-		let (render_target_source, render_target, depth_buffer) =
-			factory.create_gtk_compatible_targets(aa, width, height)?;
+		let viewport = Viewport::with_aa(aa, widget_width, widget_height);
+
+		let (render_target_source, render_target, depth_buffer) = factory
+			.create_gtk_compatible_targets(aa, viewport.width as u16, viewport.height as u16)?;
 
 		let (_, _, postprocess_target) = factory.create_gtk_compatible_render_target(
 			formats::MSAA_NONE,
-			width as u16,
-			height as u16,
+			viewport.target_width as u16,
+			viewport.target_height as u16,
 		)?;
 
+		let gfx_context = GlCallbackContext {
+			device,
+			factory,
+			encoder,
+		};
+
 		Ok(GfxContext {
-			gfx_context: GlCallbackContext {
-				device,
-				factory,
-				encoder,
-				aa,
-			},
-			width,
-			height,
+			gfx_context,
+			viewport,
 			render_target_source,
 			render_target,
 			depth_buffer,
@@ -307,26 +328,31 @@ impl GlGfxContext {
 		&mut self.gfx_context
 	}
 
-	pub fn size(&self) -> (gfx::texture::Size, gfx::texture::Size) {
-		(self.width, self.height)
+	pub fn viewport(&self) -> &Viewport {
+		&self.viewport
 	}
 
 	pub fn resize(&mut self, widget_width: i32, widget_height: i32) -> Result<()> {
-		let new_width = widget_width as gfx::texture::Size;
-		let new_height = widget_height as gfx::texture::Size;
-		if new_width != self.width || new_height != self.height {
-			let (frame_buffer_source, frame_buffer, depth_buffer) = self
-				.gfx_context
-				.factory
-				.create_gtk_compatible_targets(self.gfx_context.aa, new_width, new_height)?;
+		let new_viewport = Viewport::with_aa(self.viewport.aa, widget_width, widget_height);
+		if new_viewport.width != self.viewport.width || new_viewport.height != self.viewport.height
+		{
+			let (frame_buffer_source, frame_buffer, depth_buffer) =
+				self.gfx_context.factory.create_gtk_compatible_targets(
+					self.viewport.aa,
+					new_viewport.width as u16,
+					new_viewport.height as u16,
+				)?;
 
 			let (_, _, postprocess_target) = self
 				.gfx_context
 				.factory
-				.create_gtk_compatible_render_target(formats::MSAA_NONE, new_width, new_height)?;
+				.create_gtk_compatible_render_target(
+					formats::MSAA_NONE,
+					new_viewport.target_width as u16,
+					new_viewport.target_height as u16,
+				)?;
 
-			self.width = new_width;
-			self.height = new_height;
+			self.viewport = new_viewport;
 			self.render_target_source = frame_buffer_source;
 			self.render_target = frame_buffer;
 			self.postprocess_target = postprocess_target;
@@ -362,14 +388,10 @@ impl GlGfxContext {
 		let gtk_renderbuffer_binding = get_current_renderbuffer_binding();
 		// we do some GFX rendering, will knacker the buffer bindings but end up with a surface
 		// we can blit from
-		let viewport = Viewport {
-			width: i32::from(self.width),
-			height: i32::from(self.height),
-		};
 		GlRenderCallback::render(
 			render_callback,
 			&mut self.gfx_context,
-			viewport.clone(),
+			&self.viewport,
 			&self.render_target,
 			&self.depth_buffer,
 		)
@@ -378,7 +400,7 @@ impl GlGfxContext {
 		GlRenderCallback::postprocess(
 			render_callback,
 			&mut self.gfx_context,
-			viewport.clone(),
+			&self.viewport,
 			&self.render_target_source,
 			&self.postprocess_target,
 		)
@@ -406,12 +428,12 @@ impl GlGfxContext {
 			gl::BlitFramebuffer(
 				0,
 				0,
-				i32::from(self.width),
-				i32::from(self.height),
+				self.viewport.target_width,
+				self.viewport.target_height,
 				0,
 				0,
-				i32::from(self.width),
-				i32::from(self.height),
+				self.viewport.target_width,
+				self.viewport.target_height,
 				gl::COLOR_BUFFER_BIT,
 				gl::NEAREST,
 			);

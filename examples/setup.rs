@@ -9,8 +9,8 @@ extern crate libc;
 extern crate shared_library;
 
 use gfx::traits::FactoryExt;
-use gfx_gtk::GlGfxContext;
 use gfx_gtk::formats;
+use gfx_gtk::GlGfxContext;
 use gtk::traits::*;
 use gtk::{Inhibit, ObjectExt, Window};
 use std::cell::RefCell;
@@ -157,7 +157,7 @@ void main() {
 impl SimpleRenderCallback {
 	fn new(
 		context: &mut gfx_gtk::GlCallbackContext,
-		_viewport: gfx_gtk::Viewport,
+		viewport: &gfx_gtk::Viewport,
 	) -> gfx_gtk::Result<Self> {
 		let vertices = vec![
 			Vertex::new(-1., -1., COLOR_RED),
@@ -210,7 +210,7 @@ impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
 	fn render(
 		&mut self,
 		gfx_context: &mut gfx_gtk::GlCallbackContext,
-		viewport: gfx_gtk::Viewport,
+		viewport: &gfx_gtk::Viewport,
 		frame_buffer: &gfx_gtk::GlFrameBuffer,
 		depth_buffer: &gfx_gtk::GlDepthBuffer,
 	) -> gfx_gtk::Result<gfx_gtk::GlRenderCallbackStatus> {
@@ -287,21 +287,13 @@ pub fn main() {
 
 			let allocation = widget.get_allocation();
 
-			let mut new_context = gfx_gtk::GlGfxContext::new(
-				formats::MSAA_NONE,
-				allocation.width,
-				allocation.height,
-			)
-			.ok();
+			let mut new_context =
+				gfx_gtk::GlGfxContext::new(formats::MSAA_NONE, allocation.width, allocation.height)
+					.ok();
 			if let Some(ref mut new_context) = new_context {
-				*render_callback.borrow_mut() = SimpleRenderCallback::new(
-					new_context.gfx_context_mut(),
-					gfx_gtk::Viewport {
-						width: allocation.width,
-						height: allocation.height,
-					},
-				)
-				.ok();
+				let ref vp = &new_context.viewport().clone();
+				let ref mut ctx = new_context.gfx_context_mut();
+				*render_callback.borrow_mut() = SimpleRenderCallback::new(ctx, vp).ok();
 			}
 			*gfx_context.borrow_mut() = new_context;
 		}
