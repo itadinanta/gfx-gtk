@@ -19,8 +19,18 @@ uniform sampler2D t_Source;
 in vec2 v_TexCoord;
 out vec4 o_Color;
 
+vec4 to_sRGB(vec4 linearRGB)
+{
+    bvec4 cutoff = lessThan(linearRGB, vec4(0.0031308));
+    vec4 higher = vec4(1.055)*pow(linearRGB, vec4(1.0/2.4)) - vec4(0.055);
+    vec4 lower = linearRGB * vec4(12.92);
+
+    return mix(higher, lower, cutoff);
+}
+
 void main() {
-	o_Color = texture(t_Source, v_TexCoord, 0);
+	vec4 sampled_color = texture(t_Source, v_TexCoord, 0);
+	o_Color = vec4(to_sRGB(sampled_color).rgb, sampled_color.a);
 }
 ";
 

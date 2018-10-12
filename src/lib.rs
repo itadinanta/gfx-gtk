@@ -24,6 +24,7 @@ pub mod formats {
 	use gfx;
 
 	pub type GtkTargetColorFormat = gfx::format::Srgba8;
+	pub type GtkTargetColorView = <GtkTargetColorFormat as gfx::format::Formatted>::View;
 	pub type DefaultRenderColorFormat = gfx::format::Srgba8;
 	pub type DefaultRenderDepthFormat = gfx::format::DepthStencil;
 
@@ -56,7 +57,7 @@ gfx_defines!(
 	}
 	pipeline postprocess {
 		vbuf: gfx::VertexBuffer<BlitVertex> = (),
-		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
+		src: gfx::TextureSampler<formats::GtkTargetColorView> = "t_Source",
 		dst: gfx::RenderTarget<formats::GtkTargetColorFormat> = "o_Color",
 	}
 );
@@ -277,14 +278,13 @@ impl Viewport {
 
 pub trait GlRenderCallback<CF, DF>
 where
-	CF: gfx::format::Formatted,
+	CF: gfx::format::Formatted<View = formats::GtkTargetColorView>,
 	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
 	DF: gfx::format::Formatted,
 	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
 {
-	#[allow(clippy::too_many_arguments)]
 	fn render(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
@@ -293,6 +293,24 @@ where
 		depth_buffer: &GlDepthBuffer<DF>,
 	) -> Result<GlRenderCallbackStatus>;
 
+	fn resize(
+		&mut self,
+		gfx_context: &mut GlCallbackContext,
+		viewport: Viewport,
+	) -> Result<GlRenderCallbackStatus> {
+		Ok(GlRenderCallbackStatus::Complete)
+	}
+}
+
+pub trait GlPostprocessCallback<CF, DF>
+where
+	CF: gfx::format::Formatted<View = formats::GtkTargetColorView>,
+	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+	DF: gfx::format::Formatted,
+	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
+{
 	fn postprocess(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
@@ -319,7 +337,7 @@ where
 
 		let full_screen_triangle_index = vec![0u16, 1, 2];
 
-		let (vertex_buffer, slice) = gfx_context.factory.create_vertex_buffer_with_slice(
+		let (vbuf, ibuf) = gfx_context.factory.create_vertex_buffer_with_slice(
 			&full_screen_triangle,
 			&full_screen_triangle_index[..],
 		);
@@ -331,21 +349,33 @@ where
 				gfx::texture::WrapMode::Clamp,
 			));
 
-		Ok(GlRenderCallbackStatus::Complete)
-	}
+		let pso = gfx_context
+			.factory
+			.create_pipeline_simple(
+				shaders::POST_VERTEX_SHADER.as_bytes(),
+				shaders::POST_PIXEL_SHADER.as_bytes(),
+				postprocess::new(),
+			)
+			.unwrap();
 
-	fn resize(
-		&mut self,
-		gfx_context: &mut GlCallbackContext,
-		viewport: Viewport,
-	) -> Result<GlRenderCallbackStatus> {
+		gfx_context.encoder.draw(
+			&ibuf,
+			&pso,
+			&postprocess::Data {
+				vbuf,
+				src: (render_screen.clone(), nearest_sampler),
+				dst: (post_target.clone()),
+			},
+		);
+
+		gfx_context.flush();
 		Ok(GlRenderCallbackStatus::Complete)
 	}
 }
 
 impl<CF, DF> GlGfxContext<CF, DF>
 where
-	CF: gfx::format::Formatted,
+	CF: gfx::format::Formatted<View = [f32; 4]>,
 	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
 	DF: gfx::format::Formatted,
@@ -437,7 +467,7 @@ where
 
 	pub fn with_gfx<R>(&mut self, render_callback: &mut R)
 	where
-		R: GlRenderCallback<CF, DF>,
+		R: GlRenderCallback<CF, DF> + GlPostprocessCallback<CF, DF>,
 	{
 		fn get_current_draw_framebuffer_name() -> u32 {
 			let mut framebuffer_name = 0;
@@ -470,7 +500,7 @@ where
 		)
 		.ok(); // TODO: handle error
 
-		GlRenderCallback::postprocess(
+		GlPostprocessCallback::postprocess(
 			render_callback,
 			&mut self.gfx_context,
 			&self.viewport,

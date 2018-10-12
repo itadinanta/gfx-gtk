@@ -209,6 +209,8 @@ impl SimpleRenderCallback {
 	}
 }
 
+impl gfx_gtk::GlPostprocessCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {}
+
 impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {
 	fn render(
 		&mut self,
