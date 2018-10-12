@@ -2,6 +2,7 @@
 
 extern crate epoxy;
 extern crate gdk;
+#[macro_use]
 extern crate gfx;
 extern crate gl;
 extern crate gtk;
@@ -47,6 +48,18 @@ pub mod formats {
 	pub const MSAA_NONE: gfx::texture::AaMode = gfx::texture::AaMode::Single;
 	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
+
+gfx_defines!(
+	vertex BlitVertex {
+		pos: [f32; 2] = "a_Pos",
+		tex_coord: [f32; 2] = "a_TexCoord",
+	}
+	pipeline postprocess {
+		vbuf: gfx::VertexBuffer<BlitVertex> = (),
+		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
+		dst: gfx::RenderTarget<formats::GtkTargetColorFormat> = "o_Color",
+	}
+);
 
 #[allow(unused)]
 pub struct GfxCallbackContext<D, F>
@@ -287,6 +300,37 @@ where
 		render_screen: &GlFrameBufferTextureSrc<CF>,
 		post_target: &GlFrameBuffer<formats::GtkTargetColorFormat>,
 	) -> Result<GlRenderCallbackStatus> {
+		use gfx::traits::FactoryExt;
+		use gfx::Factory;
+		let full_screen_triangle = vec![
+			BlitVertex {
+				pos: [-1., -1.],
+				tex_coord: [0., 0.],
+			},
+			BlitVertex {
+				pos: [-1., 3.],
+				tex_coord: [0., 2.],
+			},
+			BlitVertex {
+				pos: [3., -1.],
+				tex_coord: [2., 0.],
+			},
+		];
+
+		let full_screen_triangle_index = vec![0u16, 1, 2];
+
+		let (vertex_buffer, slice) = gfx_context.factory.create_vertex_buffer_with_slice(
+			&full_screen_triangle,
+			&full_screen_triangle_index[..],
+		);
+
+		let nearest_sampler = gfx_context
+			.factory
+			.create_sampler(gfx::texture::SamplerInfo::new(
+				gfx::texture::FilterMethod::Scale,
+				gfx::texture::WrapMode::Clamp,
+			));
+
 		Ok(GlRenderCallbackStatus::Complete)
 	}
 
@@ -424,7 +468,7 @@ where
 			&self.render_target,
 			&self.depth_buffer,
 		)
-		.ok(); // TOOD: handle error
+		.ok(); // TODO: handle error
 
 		GlRenderCallback::postprocess(
 			render_callback,
@@ -433,7 +477,7 @@ where
 			&self.render_target_source,
 			&self.postprocess_target,
 		)
-		.ok(); // TOOD: handle error
+		.ok(); // TODO: handle error
 
 		// we have a full frame here and GFX shouldn't have thrown away the current
 		// framebuffer bindings, yet, so we can grab it

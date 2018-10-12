@@ -36,7 +36,7 @@ gfx_defines!(
 	pipeline postprocess {
 		vbuf: gfx::VertexBuffer<BlitVertex> = (),
 		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
-		dst: gfx::RenderTarget<gfx_gtk::formats::DefaultRenderColorFormat> = "o_Color",
+		dst: gfx::RenderTarget<gfx_gtk::formats::GtkTargetColorFormat> = "o_Color",
 	}
 );
 
