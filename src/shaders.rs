@@ -42,10 +42,20 @@ uniform sampler2DMS t_Source;
 in vec2 v_TexCoord;
 out vec4 o_Color;
 
+vec4 to_sRGB(vec4 linearRGB)
+{
+    bvec4 cutoff = lessThan(linearRGB, vec4(0.0031308));
+    vec4 higher = vec4(1.055)*pow(linearRGB, vec4(1.0/2.4)) - vec4(0.055);
+    vec4 lower = linearRGB * vec4(12.92);
+
+    return mix(higher, lower, cutoff);
+}
+
 void main() {
 	vec2 d = textureSize(t_Source);
 	ivec2 i = ivec2(d * v_TexCoord);
-	o_Color = (texelFetch(t_Source, i, 0) + texelFetch(t_Source, i, 1)
+	sampled_color = (texelFetch(t_Source, i, 0) + texelFetch(t_Source, i, 1)
 			+ texelFetch(t_Source, i, 2) + texelFetch(t_Source, i, 3)) / 4.0;
+	o_Color = vec4(to_sRGB(sampled_color).rgb, sampled_color.a);
 }
 ";
