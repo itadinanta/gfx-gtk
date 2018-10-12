@@ -22,26 +22,28 @@ pub type Depth = f32;
 pub mod formats {
 	use gfx;
 
-	pub type RenderColorFormat = gfx::format::Srgba8;
-	pub type RenderDepthFormat = gfx::format::DepthStencil;
+	pub type GtkTargetColorFormat = gfx::format::Srgba8;
+	pub type DefaultRenderColorFormat = gfx::format::Srgba8;
+	pub type DefaultRenderDepthFormat = gfx::format::DepthStencil;
 
-	pub type RenderSurface<R> = (
-		gfx::handle::Texture<R, <RenderColorFormat as gfx::format::Formatted>::Surface>,
-		gfx::handle::ShaderResourceView<R, <RenderColorFormat as gfx::format::Formatted>::View>,
-		gfx::handle::RenderTargetView<R, RenderColorFormat>,
+	pub type RenderSurface<R, CF> = (
+		gfx::handle::Texture<R, <CF as gfx::format::Formatted>::Surface>,
+		gfx::handle::ShaderResourceView<R, <CF as gfx::format::Formatted>::View>,
+		gfx::handle::RenderTargetView<R, CF>,
 	);
 
-	pub type DepthSurface<R> = (
-		gfx::handle::Texture<R, <RenderDepthFormat as gfx::format::Formatted>::Surface>,
-		gfx::handle::ShaderResourceView<R, <RenderDepthFormat as gfx::format::Formatted>::View>,
-		gfx::handle::DepthStencilView<R, RenderDepthFormat>,
+	pub type DepthSurface<R, DF> = (
+		gfx::handle::Texture<R, <DF as gfx::format::Formatted>::Surface>,
+		gfx::handle::ShaderResourceView<R, <DF as gfx::format::Formatted>::View>,
+		gfx::handle::DepthStencilView<R, DF>,
 	);
 
-	pub type RenderSurfaceWithDepth<R> = (
-		gfx::handle::ShaderResourceView<R, <RenderColorFormat as gfx::format::Formatted>::View>,
-		gfx::handle::RenderTargetView<R, RenderColorFormat>,
-		gfx::handle::DepthStencilView<R, RenderDepthFormat>,
+	pub type RenderSurfaceWithDepth<R, CF, DF> = (
+		gfx::handle::ShaderResourceView<R, <CF as gfx::format::Formatted>::View>,
+		gfx::handle::RenderTargetView<R, CF>,
+		gfx::handle::DepthStencilView<R, DF>,
 	);
+
 	pub const MSAA_NONE: gfx::texture::AaMode = gfx::texture::AaMode::Single;
 	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
@@ -68,17 +70,18 @@ where
 }
 
 #[allow(unused)]
-pub struct GfxContext<D, F>
+pub struct GfxContext<D, F, CF, DF>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
+	CF: gfx::format::Formatted,
 {
 	gfx_context: GfxCallbackContext<D, F>,
 	viewport: Viewport,
-	render_target_source: gfx::handle::ShaderResourceView<D::Resources, Rgba>,
-	render_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
-	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::RenderColorFormat>,
-	depth_buffer: gfx::handle::DepthStencilView<D::Resources, formats::RenderDepthFormat>,
+	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::GtkTargetColorFormat>,
+	render_target_source: gfx::handle::ShaderResourceView<D::Resources, CF::View>,
+	render_target: gfx::handle::RenderTargetView<D::Resources, CF>,
+	depth_buffer: gfx::handle::DepthStencilView<D::Resources, DF>,
 }
 
 pub type GlDevice = gfx_device_gl::Device;
@@ -86,13 +89,11 @@ pub type GlFactory = gfx_device_gl::Factory;
 pub type GlCommandBuffer = gfx_device_gl::CommandBuffer;
 pub type GlResources = <GlDevice as gfx::Device>::Resources;
 pub type GlEncoder = gfx::Encoder<GlResources, GlCommandBuffer>;
-pub type GlFrameBufferTextureSrc = gfx::handle::ShaderResourceView<
-	GlResources,
-	<formats::RenderColorFormat as gfx::format::Formatted>::View,
->;
-pub type GlFrameBuffer = gfx::handle::RenderTargetView<GlResources, formats::RenderColorFormat>;
-pub type GlDepthBuffer = gfx::handle::DepthStencilView<GlResources, formats::RenderDepthFormat>;
-pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
+pub type GlFrameBufferTextureSrc<F> =
+	gfx::handle::ShaderResourceView<GlResources, <F as gfx::format::Formatted>::View>;
+pub type GlFrameBuffer<CF> = gfx::handle::RenderTargetView<GlResources, CF>;
+pub type GlDepthBuffer<DF> = gfx::handle::DepthStencilView<GlResources, DF>;
+pub type GlGfxContext<CF, DF> = GfxContext<GlDevice, GlFactory, CF, DF>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -108,60 +109,72 @@ impl<T: std::fmt::Display> std::convert::From<T> for self::Error {
 }
 
 pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
-	fn create_gtk_compatible_targets(
+	fn create_gtk_compatible_targets<CF, DF>(
 		&mut self,
 		aa: gfx::texture::AaMode,
 		width: gfx::texture::Size,
 		height: gfx::texture::Size,
-	) -> Result<formats::RenderSurfaceWithDepth<R>> {
+	) -> Result<formats::RenderSurfaceWithDepth<R, CF, DF>>
+	where
+		CF: gfx::format::Formatted,
+		CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+		CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+		DF: gfx::format::Formatted,
+		DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+		DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
+	{
 		let (_, color_resource, color_target) =
 			self.create_gtk_compatible_render_target(aa, width, height)?;
 		let (_, _, depth_target) = self.create_gtk_compatible_depth_target(aa, width, height)?;
 		Ok((color_resource, color_target, depth_target))
 	}
 
-	fn create_gtk_compatible_depth_target(
+	fn create_gtk_compatible_depth_target<D>(
 		&mut self,
 		aa: gfx::texture::AaMode,
 		width: gfx::texture::Size,
 		height: gfx::texture::Size,
-	) -> Result<formats::DepthSurface<R>> {
+	) -> Result<formats::DepthSurface<R, D>>
+	where
+		D: gfx::format::Formatted,
+		D::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+		D::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
+	{
 		let kind = gfx::texture::Kind::D2(width, height, aa);
 		let tex = self.create_texture(
 			kind,
 			1,
 			gfx::memory::Bind::SHADER_RESOURCE | gfx::memory::Bind::DEPTH_STENCIL,
 			gfx::memory::Usage::Data,
-			Some(<formats::RenderDepthFormat as gfx::format::Formatted>::get_format().1),
+			Some(<D as gfx::format::Formatted>::get_format().1),
 		)?;
-		let resource = self.view_texture_as_shader_resource::<formats::RenderDepthFormat>(
-			&tex,
-			(0, 0),
-			gfx::format::Swizzle::new(),
-		)?;
+		let resource =
+			self.view_texture_as_shader_resource::<D>(&tex, (0, 0), gfx::format::Swizzle::new())?;
 		let target = self.view_texture_as_depth_stencil_trivial(&tex)?;
 		Ok((tex, resource, target))
 	}
 
-	fn create_gtk_compatible_render_target(
+	fn create_gtk_compatible_render_target<F>(
 		&mut self,
 		aa: gfx::texture::AaMode,
 		width: gfx::texture::Size,
 		height: gfx::texture::Size,
-	) -> Result<formats::RenderSurface<R>> {
+	) -> Result<formats::RenderSurface<R, F>>
+	where
+		F: gfx::format::Formatted,
+		F::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+		F::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+	{
 		let kind = gfx::texture::Kind::D2(width, height, aa);
 		let tex = self.create_texture(
 			kind,
 			1,
 			gfx::memory::Bind::SHADER_RESOURCE | gfx::memory::Bind::RENDER_TARGET,
 			gfx::memory::Usage::Data,
-			Some(<formats::RenderColorFormat as gfx::format::Formatted>::get_format().1),
+			Some(<F as gfx::format::Formatted>::get_format().1),
 		)?;
-		let hdr_srv = self.view_texture_as_shader_resource::<formats::RenderColorFormat>(
-			&tex,
-			(0, 0),
-			gfx::format::Swizzle::new(),
-		)?;
+		let hdr_srv =
+			self.view_texture_as_shader_resource::<F>(&tex, (0, 0), gfx::format::Swizzle::new())?;
 		let hdr_color_buffer = self.view_texture_as_render_target(&tex, 0, None)?;
 		Ok((tex, hdr_srv, hdr_color_buffer))
 	}
@@ -249,22 +262,30 @@ impl Viewport {
 	}
 }
 
-pub trait GlRenderCallback {
+pub trait GlRenderCallback<CF, DF>
+where
+	CF: gfx::format::Formatted,
+	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+	DF: gfx::format::Formatted,
+	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
+{
 	#[allow(clippy::too_many_arguments)]
 	fn render(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
 		viewport: &Viewport,
-		render_target: &GlFrameBuffer,
-		depth_buffer: &GlDepthBuffer,
+		render_target: &GlFrameBuffer<CF>,
+		depth_buffer: &GlDepthBuffer<DF>,
 	) -> Result<GlRenderCallbackStatus>;
 
 	fn postprocess(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
 		viewport: &Viewport,
-		render_screen: &GlFrameBufferTextureSrc,
-		post_target: &GlFrameBuffer,
+		render_screen: &GlFrameBufferTextureSrc<CF>,
+		post_target: &GlFrameBuffer<formats::GtkTargetColorFormat>,
 	) -> Result<GlRenderCallbackStatus> {
 		Ok(GlRenderCallbackStatus::Complete)
 	}
@@ -278,12 +299,20 @@ pub trait GlRenderCallback {
 	}
 }
 
-impl GlGfxContext {
+impl<CF, DF> GlGfxContext<CF, DF>
+where
+	CF: gfx::format::Formatted,
+	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+	DF: gfx::format::Formatted,
+	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
+{
 	pub fn new(
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
-	) -> Result<GlGfxContext> {
+	) -> Result<GlGfxContext<CF, DF>> {
 		Self::new_with_loader(aa, widget_width, widget_height, &epoxy::get_proc_addr)
 	}
 
@@ -292,7 +321,7 @@ impl GlGfxContext {
 		widget_width: i32,
 		widget_height: i32,
 		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
-	) -> Result<GlGfxContext> {
+	) -> Result<GlGfxContext<CF, DF>> {
 		use self::FactoryExt;
 
 		let (device, mut factory) = gfx_device_gl::create(get_proc_addr);
@@ -364,7 +393,7 @@ impl GlGfxContext {
 
 	pub fn with_gfx<R>(&mut self, render_callback: &mut R)
 	where
-		R: GlRenderCallback,
+		R: GlRenderCallback<CF, DF>,
 	{
 		fn get_current_draw_framebuffer_name() -> u32 {
 			let mut framebuffer_name = 0;

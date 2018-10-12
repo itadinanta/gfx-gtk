@@ -19,6 +19,9 @@ use std::rc::Rc;
 pub type PrimitiveIndex = i16;
 pub type VertexIndex = u16;
 
+type RenderColorFormat = gfx_gtk::formats::DefaultRenderColorFormat;
+type RenderDepthFormat = gfx_gtk::formats::DefaultRenderDepthFormat;
+
 const COLOR_RED: gfx_gtk::Rgba = [1., 0., 0., 1.];
 const COLOR_GREEN: gfx_gtk::Rgba = [0., 1., 0., 1.];
 const COLOR_BLUE: gfx_gtk::Rgba = [0., 0., 1., 1.];
@@ -33,7 +36,7 @@ gfx_defines!(
 	pipeline postprocess {
 		vbuf: gfx::VertexBuffer<BlitVertex> = (),
 		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
-		dst: gfx::RenderTarget<gfx_gtk::formats::RenderColorFormat> = "o_Color",
+		dst: gfx::RenderTarget<gfx_gtk::formats::DefaultRenderColorFormat> = "o_Color",
 	}
 );
 
@@ -56,8 +59,8 @@ gfx_defines!(
 		vbuf: gfx::VertexBuffer<Vertex> = (),
 		camera: gfx::ConstantBuffer<CameraArgs> = "cb_CameraArgs",
 		model: gfx::ConstantBuffer<ModelArgs> = "cb_ModelArgs",
-		color_target: gfx::BlendTarget <gfx_gtk::formats::RenderColorFormat> = ("o_Color", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
-		depth_target: gfx::DepthTarget <gfx_gtk::formats::RenderDepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
+		color_target: gfx::BlendTarget <RenderColorFormat> = ("o_Color", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
+		depth_target: gfx::DepthTarget <RenderDepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
 	}
 );
 
@@ -206,13 +209,13 @@ impl SimpleRenderCallback {
 	}
 }
 
-impl gfx_gtk::GlRenderCallback for SimpleRenderCallback {
+impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {
 	fn render(
 		&mut self,
 		gfx_context: &mut gfx_gtk::GlCallbackContext,
 		viewport: &gfx_gtk::Viewport,
-		frame_buffer: &gfx_gtk::GlFrameBuffer,
-		depth_buffer: &gfx_gtk::GlDepthBuffer,
+		frame_buffer: &gfx_gtk::GlFrameBuffer<RenderColorFormat>,
+		depth_buffer: &gfx_gtk::GlDepthBuffer<RenderDepthFormat>,
 	) -> gfx_gtk::Result<gfx_gtk::GlRenderCallbackStatus> {
 		gfx_context
 			.encoder
@@ -272,7 +275,8 @@ pub fn main() {
 		Inhibit(false)
 	});
 
-	let gfx_context: Rc<RefCell<Option<GlGfxContext>>> = Rc::new(RefCell::new(None));
+	let gfx_context: Rc<RefCell<Option<GlGfxContext<RenderColorFormat, RenderDepthFormat>>>> =
+		Rc::new(RefCell::new(None));
 	let render_callback: Rc<RefCell<Option<SimpleRenderCallback>>> = Rc::new(RefCell::new(None));
 
 	let glarea = gtk::GLArea::new();
