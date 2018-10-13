@@ -1,3 +1,77 @@
+//! A bridge lib between [gfx] and [gtk], which allows rendering [gtk::GlArea] content via [gfx]
+//! calls and its [gl] backend.
+//!
+//! Uses [epoxy] for Gl loading, and as such it doesn't require a Gl window/loading management
+//! such as `glutin` or `winit`
+//!
+//! See [https://github.com/itadinanta/gfx-gtk/blob/master/examples/setup.rs] for a simple rendering example.
+//! 
+//! Here's a short broken-down list to get the integration up and running:
+//! 
+//! ## Add the Cargo dependencies
+//! 
+//! ```
+//! [dependencies]
+//! gfx_gtk = "0.2"
+//! ```
+//! 
+//! ## Import crate and packages
+//! 
+//! ```
+//! extern crate gfx_gtk;
+//! 
+//! use gfx_gtk::formats;
+//! use gfx_gtk::GlRenderContext;
+//! ```
+//! 
+//! ## Choose some render formats and AA mode
+//! 
+//! ```
+//! const MSAA: gfx::texture::AaMode = formats::MSAA_4X;
+//! type RenderColorFormat = formats::DefaultRenderColorFormat;
+//! type RenderDepthFormat = formats::DefaultRenderDepthFormat;
+//! ```
+//! 
+//! ## Write a render callback 
+//! 
+//! You need to implement [GlRenderCallback] and [GlPostprocessCallback] traits (the latter
+//! can be made to use the default implementation)
+//! 
+//! ```
+//! struct SimpleRenderCallback {
+//! 	...
+//! }
+//! 
+//! impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {
+//! 	fn render(
+//!			&mut self,
+//!			gfx_context: &mut gfx_gtk::GlGfxContext,
+//!			viewport: &gfx_gtk::Viewport,
+//!			frame_buffer: &gfx_gtk::GlFrameBuffer<RenderColorFormat>,
+//!			depth_buffer: &gfx_gtk::GlDepthBuffer<RenderDepthFormat>,
+//!		) -> gfx_gtk::Result<gfx_gtk::GlRenderCallbackStatus> {
+//! 		gfx_context.encoder.draw(...);
+//! 		Ok(gfx_gtk::GlRenderCallbackStatus::Continue)
+//! 	}
+//! }
+//!
+//! impl gfx_gtk::GlPostprocessCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {}
+//! ```
+//! 
+//! ### Load Gl functions
+//! 
+//! ```
+//! main() {
+//! 	gfx_gtk::load();
+//!
+//! ```
+//! 
+//! 
+//! ```
+//! 
+//! }
+//! ```
+
 extern crate epoxy;
 extern crate gdk;
 #[macro_use]
@@ -81,8 +155,8 @@ gfx_pipeline!(postprocess {
 );
 
 #[allow(unused)]
-/// A container for a GL device and factory, with a convenience encoder ready to use
-/// Typically, it will be used with a GlDevice and GlFactory
+/// A container for a GL device and factory, with a convenience encoder ready to use.
+/// Typically, it will be specialised, including a GlDevice and GlFactory
 pub struct GfxContext<D, F>
 where
 	D: gfx::Device,
@@ -354,8 +428,10 @@ where
 	R: gfx::Resources,
 {
 }
-/// Loads the Gl function pointers via epoxy, looking for them first in the current .exe,
-/// and, failing that, in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
+/// Loads the Gl function pointers via epoxy.
+///
+/// Functions names are looked up first in the current .exe, and, failing that,
+/// in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
 ///
 /// This function needs to be invoked only once, at startup, by the host program.
 ///
@@ -377,8 +453,10 @@ pub fn load() {
 	gl::load_with(epoxy::get_proc_addr);
 }
 
-/// Loads the Gl function pointers via epoxy, looking for them first in the current .exe,
-/// and, failing that, in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
+/// Loads the Gl function pointers via epoxy, with some diagnostic output.
+///
+/// Functions names are looked up first in the current .exe, and, failing that,
+/// in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
 ///
 /// This function needs to be invoked only once, at startup, by the host program.
 ///

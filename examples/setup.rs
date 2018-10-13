@@ -24,8 +24,8 @@ pub type VertexIndex = u16;
 //const MSAA: gfx::texture::AaMode = formats::MSAA_NONE;
 
 const MSAA: gfx::texture::AaMode = formats::MSAA_4X;
-type RenderColorFormat = gfx_gtk::formats::DefaultRenderColorFormat;
-type RenderDepthFormat = gfx_gtk::formats::DefaultRenderDepthFormat;
+type RenderColorFormat = formats::DefaultRenderColorFormat;
+type RenderDepthFormat = formats::DefaultRenderDepthFormat;
 
 const COLOR_RED: gfx_gtk::Rgba = [1., 0., 0., 1.];
 const COLOR_GREEN: gfx_gtk::Rgba = [0., 1., 0., 1.];
