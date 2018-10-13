@@ -574,7 +574,15 @@ where
 		&self.viewport
 	}
 
-	pub fn resize(&mut self, widget_width: i32, widget_height: i32) -> Result<()> {
+	pub fn resize<R>(
+		&mut self,
+		widget_width: i32,
+		widget_height: i32,
+		mut render_callback: Option<&mut R>,
+	) -> Result<()>
+	where
+		R: GlRenderCallback<CF, DF>,
+	{
 		let new_viewport = Viewport::with_aa(self.viewport.aa, widget_width, widget_height);
 		if new_viewport.width != self.viewport.width || new_viewport.height != self.viewport.height
 		{
@@ -599,6 +607,10 @@ where
 			self.render_target = frame_buffer;
 			self.postprocess_target = postprocess_target;
 			self.depth_buffer = depth_buffer;
+
+			if let Some(ref mut render_callback) = render_callback {
+				render_callback.resize(&mut self.gfx_context, self.viewport.clone())?;
+			};
 		}
 
 		Ok(())

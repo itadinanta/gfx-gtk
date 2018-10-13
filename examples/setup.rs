@@ -262,9 +262,13 @@ pub fn main() {
 
 	glarea.connect_resize({
 		let gfx_context = gfx_context.clone();
+		let render_callback = render_callback.clone();
+
 		move |_widget, width, height| {
 			if let Some(ref mut context) = *gfx_context.borrow_mut() {
-				context.resize(width, height).ok();
+				if let Some(ref mut render_callback) = *render_callback.borrow_mut() {
+					context.resize(width, height, Some(render_callback)).ok();
+				}
 			}
 		}
 	});
