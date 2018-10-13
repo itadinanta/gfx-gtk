@@ -298,7 +298,7 @@ pub fn main() {
 		}
 	});
 
-	window.set_title("GLArea with Gtk rendering Example");
+	window.set_title("GLArea with gfx-rs rendering Example");
 	window.set_default_size(400, 400);
 	let v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 	v_box.pack_start(&slider, false, false, 0);
