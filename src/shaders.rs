@@ -1,3 +1,6 @@
+//! Predefined shaders used in postprocessing
+ 
+/// Postprocessing 2d passthrough shader
 pub const POST_VERTEX_SHADER: &str = r"
 #version 150 core
 
@@ -11,6 +14,7 @@ void main() {
 }
 ";
 
+/// Postprocessing 2d shader, does a linear to sRGB conversion
 pub const POST_PIXEL_SHADER: &str = r"
 #version 150 core
 
@@ -34,6 +38,7 @@ void main() {
 }
 ";
 
+/// Postprocessing 2d shader, performs a MSAA4x resolution followed by a linear to sRGB conversion
 pub const POST_PIXEL_SHADER_MSAA_4X: &str = r"
 #version 150 core
 

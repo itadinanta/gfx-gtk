@@ -19,7 +19,7 @@ use std::path::Path;
 pub type Rgba = [f32; 4];
 /// Convenience type to express a general purpose vec4 [x,y,z,w] f32
 pub type Float4 = [f32; 4];
-/// Convenienve type to express a floating point depth value as f32
+/// Convenience type to express a floating point depth value as f32
 pub type Depth = f32;
 
 /// Contains definitions of the default color and depth formats
@@ -36,7 +36,7 @@ pub mod formats {
 	/// Default depth+stencil format, 24/8
 	pub type DefaultRenderDepthFormat = gfx::format::DepthStencil;
 
-	/// convenience type for return values of functions that create offscreen
+	/// Convenience type for return values of functions that create offscreen
 	/// render targets
 	pub type RenderSurface<R, CF> = (
 		gfx::handle::Texture<R, <CF as gfx::format::Formatted>::Surface>,
@@ -44,7 +44,7 @@ pub mod formats {
 		gfx::handle::RenderTargetView<R, CF>,
 	);
 
-	/// convenience type for return values of functions that create offscreen
+	/// Convenience type for return values of functions that create offscreen
 	/// depth targets
 	pub type DepthSurface<R, DF> = (
 		gfx::handle::Texture<R, <DF as gfx::format::Formatted>::Surface>,
@@ -52,7 +52,7 @@ pub mod formats {
 		gfx::handle::DepthStencilView<R, DF>,
 	);
 
-	/// convenience type for return values of functions that create offscreen
+	/// Convenience type for return values of functions that create offscreen
 	/// depth targets
 	pub type RenderSurfaceWithDepth<R, CF, DF> = (
 		gfx::handle::ShaderResourceView<R, <CF as gfx::format::Formatted>::View>,
@@ -66,13 +66,14 @@ pub mod formats {
 	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
 
-gfx_defines!(
-	/// 2d vertex for fullscreen pass
-	vertex BlitVertex {
-		pos: [f32; 2] = "a_Pos",
-		tex_coord: [f32; 2] = "a_TexCoord",
-	}
-	pipeline postprocess {
+/// Post-processing gfx vertex structure
+gfx_vertex_struct!(BlitVertex {
+	pos: [f32; 2] = "a_Pos",
+	tex_coord: [f32; 2] = "a_TexCoord",
+});
+
+/// Post-processing gfx pipeline definitions
+gfx_pipeline!(postprocess {
 		vbuf: gfx::VertexBuffer<BlitVertex> = (),
 		src: gfx::TextureSampler<formats::GtkTargetColorView> = "t_Source",
 		dst: gfx::RenderTarget<formats::GtkTargetColorFormat> = "o_Color",
@@ -217,13 +218,14 @@ pub type GlDepthBuffer<DF> = gfx::handle::DepthStencilView<GlResources, DF>;
 pub type GlRenderContext<CF, DF> = RenderContext<GlDevice, GlFactory, CF, DF>;
 
 #[derive(Debug)]
-/// Error type for gfx_gtk::Result<_,_>
+/// Error type for [Result]
 pub enum Error {
 	/// Used to convert any error into this one by encapsulating the original error into
 	/// a string message
 	GenericError(String),
 }
 
+/// Result which produces an [Error] on failure
 pub type Result<T> = std::result::Result<T, self::Error>;
 
 impl<T: std::fmt::Display> std::convert::From<T> for self::Error {
@@ -409,7 +411,7 @@ pub enum GlRenderCallbackStatus {
 	Skip,
 }
 
-/// Specalization of the GlRenderContext to be used with a Gl device
+/// Specialization of the GlRenderContext to be used with a Gl device
 pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
 /// Specalization of the GlCallbackContext to be used with a Gl device
 pub type GlPostprocessContext = PostprocessContext<GlDevice>;
