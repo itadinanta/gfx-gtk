@@ -19,6 +19,11 @@ use std::rc::Rc;
 pub type PrimitiveIndex = i16;
 pub type VertexIndex = u16;
 
+//pub type RenderColorChannels = gfx::format::R16_G16_B16_A16;
+//pub type RenderColorFormat = (RenderColorChannels, gfx::format::Float);
+//const MSAA: gfx::texture::AaMode = formats::MSAA_NONE;
+
+const MSAA: gfx::texture::AaMode = formats::MSAA_4X;
 type RenderColorFormat = gfx_gtk::formats::DefaultRenderColorFormat;
 type RenderDepthFormat = gfx_gtk::formats::DefaultRenderDepthFormat;
 
@@ -27,18 +32,6 @@ const COLOR_GREEN: gfx_gtk::Rgba = [0., 1., 0., 1.];
 const COLOR_BLUE: gfx_gtk::Rgba = [0., 0., 1., 1.];
 const COLOR_MAGENTA: gfx_gtk::Rgba = [1., 0., 1., 1.];
 const COLOR_WHITE: gfx_gtk::Rgba = [1., 1., 1., 1.];
-
-gfx_defines!(
-	vertex BlitVertex {
-		pos: [f32; 2] = "a_Pos",
-		tex_coord: [f32; 2] = "a_TexCoord",
-	}
-	pipeline postprocess {
-		vbuf: gfx::VertexBuffer<BlitVertex> = (),
-		src: gfx::TextureSampler<[f32; 4]> = "t_Source",
-		dst: gfx::RenderTarget<gfx_gtk::formats::GtkTargetColorFormat> = "o_Color",
-	}
-);
 
 gfx_defines!(
 	vertex Vertex {
@@ -70,7 +63,6 @@ struct SimpleRenderCallback {
 	vertex_buffer: gfx::handle::Buffer<gfx_gtk::GlResources, Vertex>,
 	index_buffer: gfx::Slice<gfx_gtk::GlResources>,
 	scene_pso: gfx::pso::PipelineState<gfx_gtk::GlResources, unlit::Meta>,
-	post_pso: gfx::pso::PipelineState<gfx_gtk::GlResources, postprocess::Meta>,
 	camera: gfx::handle::Buffer<gfx_gtk::GlResources, CameraArgs>,
 	model: gfx::handle::Buffer<gfx_gtk::GlResources, ModelArgs>,
 	clear_color: gfx_gtk::Rgba,
@@ -85,32 +77,6 @@ impl Vertex {
 		}
 	}
 }
-
-const POST_VERTEX_SHADER: &str = r"
-#version 150 core
-
-in vec2 a_Pos;
-in vec2 a_TexCoord;
-out vec2 v_TexCoord;
-
-void main() {
-	v_TexCoord = a_TexCoord;
-	gl_Position = vec4(a_Pos, 0.0, 1.0);
-}
-";
-
-const POST_PIXEL_SHADER: &str = r"
-#version 150 core
-
-uniform sampler2D t_Source;
-
-in vec2 v_TexCoord;
-out vec4 o_Color;
-
-void main() {
-	o_Color = texture(t_Source, v_TexCoord, 0);
-}
-";
 
 const VERTEX_SHADER: &str = r"
 // unlit.vert
@@ -177,23 +143,24 @@ impl SimpleRenderCallback {
 
 		let camera = context.factory.create_constant_buffer(1);
 		let model = context.factory.create_constant_buffer(1);
-		let scene_pso = context
+		let shaders = context
 			.factory
-			.create_pipeline_simple(
-				VERTEX_SHADER.as_bytes(),
-				PIXEL_SHADER.as_bytes(),
-				unlit::new(),
-			)
-			.unwrap();
+			.create_shader_set(VERTEX_SHADER.as_bytes(), PIXEL_SHADER.as_bytes())?;
 
-		let post_pso = context
-			.factory
-			.create_pipeline_simple(
-				POST_VERTEX_SHADER.as_bytes(),
-				POST_PIXEL_SHADER.as_bytes(),
-				postprocess::new(),
-			)
-			.unwrap();
+		let rasterizer = match viewport.aa {
+			gfx::texture::AaMode::Multi(_) => gfx::state::Rasterizer {
+				samples: Some(gfx::state::MultiSample),
+				..gfx::state::Rasterizer::new_fill()
+			},
+			_ => gfx::state::Rasterizer::new_fill(),
+		};
+
+		let scene_pso = context.factory.create_pipeline_state(
+			&shaders,
+			gfx::Primitive::TriangleList,
+			rasterizer,
+			unlit::new(),
+		)?;
 
 		Ok(SimpleRenderCallback {
 			model_yaw: cgmath::Deg(0.),
@@ -202,7 +169,6 @@ impl SimpleRenderCallback {
 			camera,
 			model,
 			scene_pso,
-			post_pso,
 			clear_color: COLOR_WHITE,
 			clear_depth: 1.,
 		})
@@ -294,8 +260,7 @@ pub fn main() {
 			let allocation = widget.get_allocation();
 
 			let mut new_context =
-				gfx_gtk::GlGfxContext::new(formats::MSAA_NONE, allocation.width, allocation.height)
-					.ok();
+				gfx_gtk::GlGfxContext::new(MSAA, allocation.width, allocation.height).ok();
 			if let Some(ref mut new_context) = new_context {
 				let ref vp = &new_context.viewport().clone();
 				let ref mut ctx = new_context.gfx_context_mut();

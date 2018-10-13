@@ -54,7 +54,7 @@ vec4 to_sRGB(vec4 linearRGB)
 void main() {
 	vec2 d = textureSize(t_Source);
 	ivec2 i = ivec2(d * v_TexCoord);
-	sampled_color = (texelFetch(t_Source, i, 0) + texelFetch(t_Source, i, 1)
+	vec4 sampled_color = (texelFetch(t_Source, i, 0) + texelFetch(t_Source, i, 1)
 			+ texelFetch(t_Source, i, 2) + texelFetch(t_Source, i, 3)) / 4.0;
 	o_Color = vec4(to_sRGB(sampled_color).rgb, sampled_color.a);
 }

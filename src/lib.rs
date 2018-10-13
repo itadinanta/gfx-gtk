@@ -1,5 +1,3 @@
-#![feature(tool_lints)]
-
 extern crate epoxy;
 extern crate gdk;
 #[macro_use]
@@ -12,6 +10,7 @@ extern crate shared_library;
 mod dl;
 pub mod shaders;
 
+use gfx::Factory;
 use gfx_device_gl;
 use std::ops::Fn;
 use std::path::Path;
@@ -23,9 +22,9 @@ pub type Depth = f32;
 pub mod formats {
 	use gfx;
 
-	pub type GtkTargetColorFormat = gfx::format::Srgba8;
+	pub type GtkTargetColorFormat = gfx::format::Rgba8;
 	pub type GtkTargetColorView = <GtkTargetColorFormat as gfx::format::Formatted>::View;
-	pub type DefaultRenderColorFormat = gfx::format::Srgba8;
+	pub type DefaultRenderColorFormat = gfx::format::Rgba8;
 	pub type DefaultRenderDepthFormat = gfx::format::DepthStencil;
 
 	pub type RenderSurface<R, CF> = (
@@ -73,6 +72,39 @@ where
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
 }
 
+pub struct GfxPostprocessContext<D>
+where
+	D: gfx::Device,
+{
+	pub sampler: gfx::handle::Sampler<D::Resources>,
+	pub pso: gfx::PipelineState<D::Resources, postprocess::Meta>,
+	pub vbuf: gfx::handle::Buffer<D::Resources, BlitVertex>,
+	pub ibuf: gfx::Slice<D::Resources>,
+}
+
+impl GfxPostprocessContext<GlDevice> {
+	pub fn full_screen_blit<CF>(
+		&self,
+		encoder: &mut gfx::Encoder<GlResources, GlCommandBuffer>,
+		render_screen: &GlFrameBufferTextureSrc<CF>,
+		post_target: &GlFrameBuffer<formats::GtkTargetColorFormat>,
+	) where
+		CF: gfx::format::Formatted<View = formats::GtkTargetColorView>,
+		CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
+		CF::Surface: gfx::format::RenderSurface + gfx::format::TextureSurface,
+	{
+		encoder.draw(
+			&self.ibuf,
+			&self.pso,
+			&postprocess::Data {
+				vbuf: self.vbuf.clone(),
+				src: (render_screen.clone(), self.sampler.clone()),
+				dst: (post_target.clone()),
+			},
+		);
+	}
+}
+
 impl<D, F> GfxCallbackContext<D, F>
 where
 	D: gfx::Device,
@@ -92,6 +124,7 @@ where
 {
 	gfx_context: GfxCallbackContext<D, F>,
 	viewport: Viewport,
+	postprocess_context: GfxPostprocessContext<D>,
 	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::GtkTargetColorFormat>,
 	render_target_source: gfx::handle::ShaderResourceView<D::Resources, CF::View>,
 	render_target: gfx::handle::RenderTargetView<D::Resources, CF>,
@@ -240,6 +273,7 @@ pub enum GlRenderCallbackStatus {
 }
 
 pub type GlCallbackContext = GfxCallbackContext<GlDevice, GlFactory>;
+pub type GlPostprocessContext = GfxPostprocessContext<GlDevice>;
 
 #[derive(Clone)]
 pub struct Viewport {
@@ -256,23 +290,24 @@ impl Viewport {
 	}
 
 	pub fn with_aa(aa: gfx::texture::AaMode, target_width: i32, target_height: i32) -> Self {
+		// for supersampling
 		let (width, height) = Self::aa_size(aa, target_width, target_height);
 		Viewport {
 			width,
 			height,
-			target_width: target_width,
-			target_height: target_height,
+			target_width,
+			target_height,
 			aa,
 		}
 	}
 
 	fn aa_size(aa: gfx::texture::AaMode, width: i32, height: i32) -> (i32, i32) {
-		let mul = match aa {
-			gfx::texture::AaMode::Single => 1,
-			gfx::texture::AaMode::Multi(m) => m as i32,
-			_ => 0,
+		let (mx, my) = match aa {
+			gfx::texture::AaMode::Single => (1, 1),
+			gfx::texture::AaMode::Multi(_) => (1, 1),
+			_ => (0, 0),
 		};
-		(width * mul, height * mul)
+		(width * mx, height * my)
 	}
 }
 
@@ -295,8 +330,8 @@ where
 
 	fn resize(
 		&mut self,
-		gfx_context: &mut GlCallbackContext,
-		viewport: Viewport,
+		_gfx_context: &mut GlCallbackContext,
+		_viewport: Viewport,
 	) -> Result<GlRenderCallbackStatus> {
 		Ok(GlRenderCallbackStatus::Complete)
 	}
@@ -314,60 +349,16 @@ where
 	fn postprocess(
 		&mut self,
 		gfx_context: &mut GlCallbackContext,
-		viewport: &Viewport,
+		postprocess_context: &GlPostprocessContext,
+		_viewport: &Viewport,
 		render_screen: &GlFrameBufferTextureSrc<CF>,
 		post_target: &GlFrameBuffer<formats::GtkTargetColorFormat>,
 	) -> Result<GlRenderCallbackStatus> {
-		use gfx::traits::FactoryExt;
-		use gfx::Factory;
-		let full_screen_triangle = vec![
-			BlitVertex {
-				pos: [-1., -1.],
-				tex_coord: [0., 0.],
-			},
-			BlitVertex {
-				pos: [-1., 3.],
-				tex_coord: [0., 2.],
-			},
-			BlitVertex {
-				pos: [3., -1.],
-				tex_coord: [2., 0.],
-			},
-		];
-
-		let full_screen_triangle_index = vec![0u16, 1, 2];
-
-		let (vbuf, ibuf) = gfx_context.factory.create_vertex_buffer_with_slice(
-			&full_screen_triangle,
-			&full_screen_triangle_index[..],
+		postprocess_context.full_screen_blit::<CF>(
+			&mut gfx_context.encoder,
+			render_screen,
+			post_target,
 		);
-
-		let nearest_sampler = gfx_context
-			.factory
-			.create_sampler(gfx::texture::SamplerInfo::new(
-				gfx::texture::FilterMethod::Scale,
-				gfx::texture::WrapMode::Clamp,
-			));
-
-		let pso = gfx_context
-			.factory
-			.create_pipeline_simple(
-				shaders::POST_VERTEX_SHADER.as_bytes(),
-				shaders::POST_PIXEL_SHADER.as_bytes(),
-				postprocess::new(),
-			)
-			.unwrap();
-
-		gfx_context.encoder.draw(
-			&ibuf,
-			&pso,
-			&postprocess::Data {
-				vbuf,
-				src: (render_screen.clone(), nearest_sampler),
-				dst: (post_target.clone()),
-			},
-		);
-
 		gfx_context.flush();
 		Ok(GlRenderCallbackStatus::Complete)
 	}
@@ -396,7 +387,8 @@ where
 		widget_height: i32,
 		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
 	) -> Result<GlGfxContext<CF, DF>> {
-		use self::FactoryExt;
+		use self::FactoryExt as LocalFactory;
+		use gfx::traits::FactoryExt;
 
 		let (device, mut factory) = gfx_device_gl::create(get_proc_addr);
 		let encoder = factory.create_command_buffer().into();
@@ -411,6 +403,52 @@ where
 			viewport.target_height as u16,
 		)?;
 
+		let full_screen_triangle = vec![
+			BlitVertex {
+				pos: [-1., -1.],
+				tex_coord: [0., 0.],
+			},
+			BlitVertex {
+				pos: [-1., 3.],
+				tex_coord: [0., 2.],
+			},
+			BlitVertex {
+				pos: [3., -1.],
+				tex_coord: [2., 0.],
+			},
+		];
+
+		let full_screen_triangle_index = vec![0u16, 2, 1];
+
+		let (vbuf, ibuf) = factory.create_vertex_buffer_with_slice(
+			&full_screen_triangle,
+			&full_screen_triangle_index[..],
+		);
+
+		let nearest_sampler = factory.create_sampler(gfx::texture::SamplerInfo::new(
+			gfx::texture::FilterMethod::Scale,
+			gfx::texture::WrapMode::Clamp,
+		));
+
+		// TODO: make this configurable
+		let pixel_shader_code = match viewport.aa {
+			gfx::texture::AaMode::Multi(4) => shaders::POST_PIXEL_SHADER_MSAA_4X.as_bytes(),
+			_ => shaders::POST_PIXEL_SHADER.as_bytes(),
+		};
+
+		let post_pso = factory.create_pipeline_simple(
+			shaders::POST_VERTEX_SHADER.as_bytes(),
+			pixel_shader_code,
+			postprocess::new(),
+		)?;
+
+		let postprocess_context = GfxPostprocessContext {
+			vbuf,
+			ibuf,
+			pso: post_pso,
+			sampler: nearest_sampler,
+		};
+
 		let gfx_context = GlCallbackContext {
 			device,
 			factory,
@@ -420,6 +458,7 @@ where
 		Ok(GfxContext {
 			gfx_context,
 			viewport,
+			postprocess_context,
 			render_target_source,
 			render_target,
 			depth_buffer,
@@ -503,6 +542,7 @@ where
 		GlPostprocessCallback::postprocess(
 			render_callback,
 			&mut self.gfx_context,
+			&self.postprocess_context,
 			&self.viewport,
 			&self.render_target_source,
 			&self.postprocess_target,
