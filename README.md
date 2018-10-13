@@ -133,11 +133,11 @@ glarea.connect_render({
 	}
 });
 ```
- After this, every time Gtk refreshes the `GlArea` content, it will invoke the `render_callback` to paint itself.
+After this, every time Gtk refreshes the `GlArea` content, it will invoke the `render_callback` to paint itself.
 
 
 See [examples/setup.rs](https://github.com/itadinanta/gfx-gtk/blob/master/examples/setup.rs) for a simple interactive 
-rendering example. It should look like this:
+rendering example. On running it with `cargo run --example setup`, it should look like this:
 
 ![Screenshot 1](img/Screenshot_001.png)
 
