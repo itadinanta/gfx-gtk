@@ -143,22 +143,11 @@ impl SimpleRenderCallback {
 
 		let camera = context.factory.create_constant_buffer(1);
 		let model = context.factory.create_constant_buffer(1);
-		let shaders = context
-			.factory
-			.create_shader_set(VERTEX_SHADER.as_bytes(), PIXEL_SHADER.as_bytes())?;
 
-		let rasterizer = match viewport.aa {
-			gfx::texture::AaMode::Multi(_) => gfx::state::Rasterizer {
-				samples: Some(gfx::state::MultiSample),
-				..gfx::state::Rasterizer::new_fill()
-			},
-			_ => gfx::state::Rasterizer::new_fill(),
-		};
-
-		let scene_pso = context.factory.create_pipeline_state(
-			&shaders,
-			gfx::Primitive::TriangleList,
-			rasterizer,
+		let scene_pso = context.create_msaa_pipeline_state(
+			viewport.aa,
+			VERTEX_SHADER.as_bytes(),
+			PIXEL_SHADER.as_bytes(),
 			unlit::new(),
 		)?;
 

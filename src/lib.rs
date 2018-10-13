@@ -72,6 +72,26 @@ where
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
 }
 
+impl<D, F> GfxCallbackContext<D, F>
+where
+	D: gfx::Device,
+	F: gfx::Factory<D::Resources>,
+{
+	pub fn create_msaa_pipeline_state<I: gfx::pso::PipelineInit>(
+		&mut self,
+		aa: gfx::texture::AaMode,
+		vertex_shader: &[u8],
+		pixel_shader: &[u8],
+		init: I,
+	) -> std::result::Result<
+		gfx::pso::PipelineState<D::Resources, I::Meta>,
+		gfx::PipelineStateError<String>,
+	> {
+		self.factory
+			.create_msaa_pipeline_state(aa, vertex_shader, pixel_shader, init)
+	}
+}
+
 pub struct GfxPostprocessContext<D>
 where
 	D: gfx::Device,
@@ -174,6 +194,27 @@ pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 			self.create_gtk_compatible_render_target(aa, width, height)?;
 		let (_, _, depth_target) = self.create_gtk_compatible_depth_target(aa, width, height)?;
 		Ok((color_resource, color_target, depth_target))
+	}
+
+	fn create_msaa_pipeline_state<I: gfx::pso::PipelineInit>(
+		&mut self,
+		aa: gfx::texture::AaMode,
+		vertex_shader: &[u8],
+		pixel_shader: &[u8],
+		init: I,
+	) -> std::result::Result<gfx::pso::PipelineState<R, I::Meta>, gfx::PipelineStateError<String>>
+	{
+		let shaders = self.create_shader_set(vertex_shader, pixel_shader)?;
+
+		let rasterizer = match aa {
+			gfx::texture::AaMode::Multi(_) => gfx::state::Rasterizer {
+				samples: Some(gfx::state::MultiSample),
+				..gfx::state::Rasterizer::new_fill()
+			},
+			_ => gfx::state::Rasterizer::new_fill(),
+		};
+
+		self.create_pipeline_state(&shaders, gfx::Primitive::TriangleList, rasterizer, init)
 	}
 
 	fn create_gtk_compatible_depth_target<D>(
