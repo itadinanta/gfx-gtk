@@ -10,7 +10,7 @@ extern crate shared_library;
 
 use gfx::traits::FactoryExt;
 use gfx_gtk::formats;
-use gfx_gtk::GlGfxContext;
+use gfx_gtk::GlRenderContext;
 use gtk::traits::*;
 use gtk::{Inhibit, ObjectExt, Window};
 use std::cell::RefCell;
@@ -125,7 +125,7 @@ void main() {
 
 impl SimpleRenderCallback {
 	fn new(
-		context: &mut gfx_gtk::GlRenderContext,
+		context: &mut gfx_gtk::GlGfxContext,
 		viewport: &gfx_gtk::Viewport,
 	) -> gfx_gtk::Result<Self> {
 		let vertices = vec![
@@ -169,7 +169,7 @@ impl gfx_gtk::GlPostprocessCallback<RenderColorFormat, RenderDepthFormat> for Si
 impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {
 	fn render(
 		&mut self,
-		gfx_context: &mut gfx_gtk::GlRenderContext,
+		gfx_context: &mut gfx_gtk::GlGfxContext,
 		viewport: &gfx_gtk::Viewport,
 		frame_buffer: &gfx_gtk::GlFrameBuffer<RenderColorFormat>,
 		depth_buffer: &gfx_gtk::GlDepthBuffer<RenderDepthFormat>,
@@ -212,7 +212,8 @@ impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleR
 			},
 		);
 
-		gfx_context.flush();
+		// Return Skip to disable postprocessing,
+		//Ok(gfx_gtk::GlRenderCallbackStatus::Skip)
 		Ok(gfx_gtk::GlRenderCallbackStatus::Continue)
 	}
 }
@@ -232,7 +233,7 @@ pub fn main() {
 		Inhibit(false)
 	});
 
-	let gfx_context: Rc<RefCell<Option<GlGfxContext<RenderColorFormat, RenderDepthFormat>>>> =
+	let gfx_context: Rc<RefCell<Option<GlRenderContext<RenderColorFormat, RenderDepthFormat>>>> =
 		Rc::new(RefCell::new(None));
 	let render_callback: Rc<RefCell<Option<SimpleRenderCallback>>> = Rc::new(RefCell::new(None));
 
@@ -249,7 +250,7 @@ pub fn main() {
 			let allocation = widget.get_allocation();
 
 			let mut new_context =
-				gfx_gtk::GlGfxContext::new(MSAA, allocation.width, allocation.height).ok();
+				gfx_gtk::GlRenderContext::new(MSAA, allocation.width, allocation.height).ok();
 			if let Some(ref mut new_context) = new_context {
 				let ref vp = &new_context.viewport().clone();
 				let ref mut ctx = new_context.render_context_mut();

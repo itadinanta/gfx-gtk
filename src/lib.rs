@@ -82,7 +82,7 @@ gfx_defines!(
 #[allow(unused)]
 /// A container for a GL device and factory, with a convenience encoder ready to use
 /// Typically, it will be used with a GlDevice and GlFactory
-pub struct GfxRenderContext<D, F>
+pub struct GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
@@ -96,7 +96,7 @@ where
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
 }
 
-impl<D, F> GfxRenderContext<D, F>
+impl<D, F> GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
@@ -120,7 +120,7 @@ where
 
 /// a container for the pre-built data and state needed to perform
 /// MSAA resolution and sRGB correction in the post-processing stage
-pub struct GfxPostprocessContext<D>
+pub struct PostprocessContext<D>
 where
 	D: gfx::Device,
 {
@@ -134,7 +134,7 @@ where
 	pub ibuf: gfx::Slice<D::Resources>,
 }
 
-impl GfxPostprocessContext<GlDevice> {
+impl PostprocessContext<GlDevice> {
 	/// performs a full screen pass using the original render screen as the source
 	/// and the GTK framebuffer as the target, using baked-in settings
 	/// TODO: make this easy to override
@@ -160,7 +160,7 @@ impl GfxPostprocessContext<GlDevice> {
 	}
 }
 
-impl<D, F> GfxRenderContext<D, F>
+impl<D, F> GfxContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
@@ -174,17 +174,17 @@ where
 #[allow(unused)]
 /// Structure encapsulating all the GFX state needed for rendering within
 /// a GL context in GTK
-pub struct GfxContext<D, F, CF, DF>
+pub struct RenderContext<D, F, CF, DF>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 	CF: gfx::format::Formatted,
 {
 	///
-	gfx_context: GfxRenderContext<D, F>,
+	gfx_context: GfxContext<D, F>,
 	/// describes the gtk GlArea size and caps
 	viewport: Viewport,
-	postprocess_context: GfxPostprocessContext<D>,
+	postprocess_context: PostprocessContext<D>,
 	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::GtkTargetColorFormat>,
 	render_target_source: gfx::handle::ShaderResourceView<D::Resources, CF::View>,
 	render_target: gfx::handle::RenderTargetView<D::Resources, CF>,
@@ -200,7 +200,7 @@ pub type GlFrameBufferTextureSrc<F> =
 	gfx::handle::ShaderResourceView<GlResources, <F as gfx::format::Formatted>::View>;
 pub type GlFrameBuffer<CF> = gfx::handle::RenderTargetView<GlResources, CF>;
 pub type GlDepthBuffer<DF> = gfx::handle::DepthStencilView<GlResources, DF>;
-pub type GlGfxContext<CF, DF> = GfxContext<GlDevice, GlFactory, CF, DF>;
+pub type GlRenderContext<CF, DF> = RenderContext<GlDevice, GlFactory, CF, DF>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -371,9 +371,9 @@ pub enum GlRenderCallbackStatus {
 }
 
 /// Specalization of the GlRenderContext to be used with a Gl device
-pub type GlRenderContext = GfxRenderContext<GlDevice, GlFactory>;
+pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
 /// Specalization of the GlCallbackContext to be used with a Gl device
-pub type GlPostprocessContext = GfxPostprocessContext<GlDevice>;
+pub type GlPostprocessContext = PostprocessContext<GlDevice>;
 
 #[derive(Clone)]
 pub struct Viewport {
@@ -422,7 +422,7 @@ where
 {
 	fn render(
 		&mut self,
-		gfx_context: &mut GlRenderContext,
+		gfx_context: &mut GlGfxContext,
 		viewport: &Viewport,
 		render_target: &GlFrameBuffer<CF>,
 		depth_buffer: &GlDepthBuffer<DF>,
@@ -430,7 +430,7 @@ where
 
 	fn resize(
 		&mut self,
-		_gfx_context: &mut GlRenderContext,
+		_gfx_context: &mut GlGfxContext,
 		_viewport: Viewport,
 	) -> Result<GlRenderCallbackStatus> {
 		Ok(GlRenderCallbackStatus::Continue)
@@ -448,7 +448,7 @@ where
 {
 	fn postprocess(
 		&mut self,
-		gfx_context: &mut GlRenderContext,
+		gfx_context: &mut GlGfxContext,
 		postprocess_context: &GlPostprocessContext,
 		_viewport: &Viewport,
 		render_screen: &GlFrameBufferTextureSrc<CF>,
@@ -464,7 +464,7 @@ where
 	}
 }
 
-impl<CF, DF> GlGfxContext<CF, DF>
+impl<CF, DF> GlRenderContext<CF, DF>
 where
 	CF: gfx::format::Formatted<View = [f32; 4]>,
 	CF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
@@ -477,7 +477,7 @@ where
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
-	) -> Result<GlGfxContext<CF, DF>> {
+	) -> Result<GlRenderContext<CF, DF>> {
 		Self::new_with_loader(aa, widget_width, widget_height, &epoxy::get_proc_addr)
 	}
 
@@ -486,7 +486,7 @@ where
 		widget_width: i32,
 		widget_height: i32,
 		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
-	) -> Result<GlGfxContext<CF, DF>> {
+	) -> Result<GlRenderContext<CF, DF>> {
 		use self::FactoryExt as LocalFactory;
 		use gfx::traits::FactoryExt;
 
@@ -542,20 +542,20 @@ where
 			postprocess::new(),
 		)?;
 
-		let postprocess_context = GfxPostprocessContext {
+		let postprocess_context = PostprocessContext {
 			vbuf,
 			ibuf,
 			pso: post_pso,
 			sampler: nearest_sampler,
 		};
 
-		let gfx_context = GlRenderContext {
+		let gfx_context = GfxContext {
 			device,
 			factory,
 			encoder,
 		};
 
-		Ok(GfxContext {
+		Ok(RenderContext {
 			gfx_context,
 			viewport,
 			postprocess_context,
@@ -566,7 +566,7 @@ where
 		})
 	}
 
-	pub fn render_context_mut(&mut self) -> &mut GlRenderContext {
+	pub fn render_context_mut(&mut self) -> &mut GlGfxContext {
 		&mut self.gfx_context
 	}
 
@@ -630,57 +630,63 @@ where
 		let gtk_renderbuffer_binding = get_current_renderbuffer_binding();
 		// we do some GFX rendering, will knacker the buffer bindings but end up with a surface
 		// we can blit from
-		GlRenderCallback::render(
+		let render_result = GlRenderCallback::render(
 			render_callback,
 			&mut self.gfx_context,
 			&self.viewport,
 			&self.render_target,
 			&self.depth_buffer,
-		)
-		.ok(); // TODO: handle error
+		);
 
-		GlPostprocessCallback::postprocess(
-			render_callback,
-			&mut self.gfx_context,
-			&self.postprocess_context,
-			&self.viewport,
-			&self.render_target_source,
-			&self.postprocess_target,
-		)
-		.ok(); // TODO: handle error
-
-		// we have a full frame here and GFX shouldn't have thrown away the current
-		// framebuffer bindings, yet, so we can grab it
-		let gfx_framebuffer_name = get_current_draw_framebuffer_name();
-		unsafe {
-			// we want the framebuffer from Gfx (which we have just got) as the blit source
-			gl::BindFramebuffer(gl::READ_FRAMEBUFFER, gfx_framebuffer_name);
-			// and the framebuffer from Gtk (which we have saved earlier) as the destination
-			gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, gtk_framebuffer_name);
-			// we need to re-attach the color attachment buffer as well
-			gl::NamedFramebufferRenderbuffer(
-				gtk_framebuffer_name,
-				gl::COLOR_ATTACHMENT0,
-				gl::RENDERBUFFER,
-				gtk_renderbuffer_binding,
-			);
-			// And finally, we blit the GFX framebuffer onto the GlArea framebuffer.
-			// This is wasteful as the GlArea code already does this for its own off-screen
-			// framebuffer target but we have no means to blit directly to the screen backbuffer
-			// as it happens under the hood within the GlArea rendering code
-			gl::BlitFramebuffer(
-				0,
-				0,
-				self.viewport.target_width,
-				self.viewport.target_height,
-				0,
-				0,
-				self.viewport.target_width,
-				self.viewport.target_height,
-				gl::COLOR_BUFFER_BIT,
-				gl::NEAREST,
-			);
-			gl::Flush();
+		let postprocess_result = match render_result {
+			Ok(GlRenderCallbackStatus::Continue) => GlPostprocessCallback::postprocess(
+				render_callback,
+				&mut self.gfx_context,
+				&self.postprocess_context,
+				&self.viewport,
+				&self.render_target_source,
+				&self.postprocess_target,
+			), // TODO: handle error
+			Ok(_) => {
+				self.gfx_context.flush();
+				Ok(GlRenderCallbackStatus::Skip)
+			}
+			Err(e) => Err(e),
+		};
+		if postprocess_result.is_ok() {
+			// we have a full frame here and GFX shouldn't have thrown away the current
+			// framebuffer bindings, yet, so we can grab it
+			let gfx_framebuffer_name = get_current_draw_framebuffer_name();
+			unsafe {
+				// we want the framebuffer from Gfx (which we have just got) as the blit source
+				gl::BindFramebuffer(gl::READ_FRAMEBUFFER, gfx_framebuffer_name);
+				// and the framebuffer from Gtk (which we have saved earlier) as the destination
+				gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, gtk_framebuffer_name);
+				// we need to re-attach the color attachment buffer as well
+				gl::NamedFramebufferRenderbuffer(
+					gtk_framebuffer_name,
+					gl::COLOR_ATTACHMENT0,
+					gl::RENDERBUFFER,
+					gtk_renderbuffer_binding,
+				);
+				// And finally, we blit the GFX framebuffer onto the GlArea framebuffer.
+				// This is wasteful as the GlArea code already does this for its own off-screen
+				// framebuffer target but we have no means to blit directly to the screen backbuffer
+				// as it happens under the hood within the GlArea rendering code
+				gl::BlitFramebuffer(
+					0,
+					0,
+					self.viewport.target_width,
+					self.viewport.target_height,
+					0,
+					0,
+					self.viewport.target_width,
+					self.viewport.target_height,
+					gl::COLOR_BUFFER_BIT,
+					gl::NEAREST,
+				);
+				gl::Flush();
+			}
 		}
 		self.cleanup();
 	}
