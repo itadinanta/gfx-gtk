@@ -252,7 +252,7 @@ pub fn main() {
 			let mut new_context =
 				gfx_gtk::GlRenderContext::new(MSAA, allocation.width, allocation.height, None).ok();
 			if let Some(ref mut new_context) = new_context {
-				let ref vp = &new_context.viewport().clone();
+				let ref vp = new_context.viewport();
 				let ref mut ctx = new_context.gfx_context_mut();
 				*render_callback.borrow_mut() = SimpleRenderCallback::new(ctx, vp).ok();
 			}
