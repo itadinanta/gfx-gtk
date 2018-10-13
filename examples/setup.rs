@@ -2,6 +2,7 @@ extern crate epoxy;
 extern crate gdk;
 #[macro_use]
 extern crate gfx;
+extern crate gfx_gtk;
 extern crate cgmath;
 extern crate gl;
 extern crate gtk;

@@ -12,7 +12,7 @@
 //!
 //! ```
 //! [dependencies]
-//! gfx_gtk = "0.2"
+//! gfx_gtk = "0.3"
 //! ```
 //!
 //! ## Import crate and packages
@@ -144,13 +144,13 @@ extern crate gfx;
 extern crate gl;
 extern crate gtk;
 extern crate libc;
+extern crate gfx_device_gl;
 extern crate shared_library;
 
 mod dl;
 pub mod shaders;
 
 use gfx::Factory;
-use gfx_device_gl;
 use std::ops::Fn;
 use std::path::Path;
 
@@ -738,7 +738,7 @@ where
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
-		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
+		get_proc_addr: &Fn(&str) -> dl::LibPtr,
 		postprocess_shader: Option<&[u8]>,
 	) -> Result<GlRenderContext<CF, DF>> {
 		use self::FactoryExt as LocalFactory;

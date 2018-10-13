@@ -1,8 +1,11 @@
+use shared_library;
 use shared_library::dynamic_library::DynamicLibrary;
 use std::path::Path;
 use std::ptr;
+use epoxy;
+use std;
 
-type LibPtr = *const std::ffi::c_void;
+pub type LibPtr = *const std::os::raw::c_void;
 
 pub trait ProcLoader {
 	fn get_proc_addr(&self, s: &str) -> Option<LibPtr>;
