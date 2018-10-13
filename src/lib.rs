@@ -180,30 +180,47 @@ where
 	F: gfx::Factory<D::Resources>,
 	CF: gfx::format::Formatted,
 {
-	///
+	/// GFX factory, device and commands
 	gfx_context: GfxContext<D, F>,
-	/// describes the gtk GlArea size and caps
+	/// Describes the gtk GlArea size and AA capability
 	viewport: Viewport,
+	/// Resources used by the postprocess step
 	postprocess_context: PostprocessContext<D>,
+	/// Render target, destination of the post-process stage
 	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::GtkTargetColorFormat>,
+	/// Off-screen texture view of the render target, source of the post-process stage
 	render_target_source: gfx::handle::ShaderResourceView<D::Resources, CF::View>,
+	/// Render target, destination of the main render stage
 	render_target: gfx::handle::RenderTargetView<D::Resources, CF>,
+	/// Depth buffer, used by the main render stage
 	depth_buffer: gfx::handle::DepthStencilView<D::Resources, DF>,
 }
 
+/// gfx device, Gl backend
 pub type GlDevice = gfx_device_gl::Device;
+/// gfx factory, Gl backend
 pub type GlFactory = gfx_device_gl::Factory;
+/// gfx command buffer, Gl backend
 pub type GlCommandBuffer = gfx_device_gl::CommandBuffer;
+/// gfx resources, Gl backend
 pub type GlResources = <GlDevice as gfx::Device>::Resources;
+/// gfx encoder, Gl backend
 pub type GlEncoder = gfx::Encoder<GlResources, GlCommandBuffer>;
+/// gfx texture source view of the main render target, Gl backend
 pub type GlFrameBufferTextureSrc<F> =
 	gfx::handle::ShaderResourceView<GlResources, <F as gfx::format::Formatted>::View>;
+/// gfx main render target, Gl backend
 pub type GlFrameBuffer<CF> = gfx::handle::RenderTargetView<GlResources, CF>;
+/// gfx main depth buffer, Gl backend
 pub type GlDepthBuffer<DF> = gfx::handle::DepthStencilView<GlResources, DF>;
+/// render context, specialized for the gfx Gl backend
 pub type GlRenderContext<CF, DF> = RenderContext<GlDevice, GlFactory, CF, DF>;
 
 #[derive(Debug)]
+/// Error type for gfx_gtk::Result<_,_>
 pub enum Error {
+	/// Used to convert any error into this one by encapsulating the original error into
+	/// a string message
 	GenericError(String),
 }
 
@@ -215,6 +232,7 @@ impl<T: std::fmt::Display> std::convert::From<T> for self::Error {
 	}
 }
 
+/// Extends [gfx::traits::FactoryExt] with utility functions specific to the gfx to gtk integration
 pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 	/// Creates a render target (with its associated texture source view and a depth target
 	/// which are resonably compatible with something that we can blit onto a GtkGlView
@@ -244,6 +262,10 @@ pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 
 	/// creates a Gfx PSO given a vertex/pixel shader pair. The PSO will contain
 	/// a MSAA-enabled rasterizer if AaMode is Multi(_)
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// `vertex_shader` GLSL source code of the vertex shader
+	/// `pixel_shader` GLSL source code of the pixel shader
+	/// `init` the gfx pipeline initializer for `I`
 	fn create_msaa_pipeline_state<I: gfx::pso::PipelineInit>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -294,6 +316,10 @@ pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 		Ok((tex, resource, target))
 	}
 
+	/// Creates a render target for the GlArea client area
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `width` width of the client area of the containing widget
+	/// * `height` height of the client area of the containing widget`
 	fn create_gtk_compatible_render_target<F>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -326,7 +352,13 @@ where
 	R: gfx::Resources,
 {
 }
-
+/// Loads the Gl function pointers via epoxy, looking for them first in the current .exe,
+/// and, failing that, in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
+///
+/// This function needs to be invoked only once, at startup, by the host program.
+///
+/// Failure to load any function will be silent. Use [debug_load()] for diagnostic output.
+///
 pub fn load() {
 	use self::dl::{fn_from, DlProcLoader, Failover};
 	let loader = Failover(
@@ -343,6 +375,13 @@ pub fn load() {
 	gl::load_with(epoxy::get_proc_addr);
 }
 
+/// Loads the Gl function pointers via epoxy, looking for them first in the current .exe,
+/// and, failing that, in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
+///
+/// This function needs to be invoked only once, at startup, by the host program.
+///
+/// Will dump to stdout any failure to load a function (for dll or symbol not found) so this
+/// is better suited for debugging. Use [load()] instead for production code.
 pub fn debug_load() {
 	use self::dl::{debug_get_proc_addr, fn_from, DlProcLoader, Failover};
 	let loader = Failover(
@@ -376,19 +415,31 @@ pub type GlGfxContext = GfxContext<GlDevice, GlFactory>;
 pub type GlPostprocessContext = PostprocessContext<GlDevice>;
 
 #[derive(Clone)]
+/// Describes the client area of the GlArea being rendered into
 pub struct Viewport {
+	/// Width of the render target in pixels. This may be larger than the actual client window size.
 	pub width: i32,
+	/// Height of the render target in pixels. This may be larger than the actual client window size.
 	pub height: i32,
+	/// Width of the GlArea client in pixels
 	pub target_width: i32,
+	/// Height of the GlArea client in pixels
 	pub target_height: i32,
+	/// Antialiasing mode (supported `Single` and `Multi(4)`)
 	pub aa: gfx::texture::AaMode,
 }
 
 impl Viewport {
+	/// The ratio between width and height of the
 	pub fn aspect_ratio(&self) -> f32 {
-		self.width as f32 / self.height as f32
+		self.target_width as f32 / self.target_height as f32
 	}
 
+	/// Creates a new Viewport from the specified source GlArea size. `width` and `height`
+	/// will be determined accordingly and taking into account supersampling if applicable
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `target_width` width of the client area of the containing widget
+	/// * `target_height` height of the client area of the containing widget`
 	pub fn with_aa(aa: gfx::texture::AaMode, target_width: i32, target_height: i32) -> Self {
 		// for supersampling
 		let (width, height) = Self::aa_size(aa, target_width, target_height);
@@ -401,16 +452,26 @@ impl Viewport {
 		}
 	}
 
-	fn aa_size(aa: gfx::texture::AaMode, width: i32, height: i32) -> (i32, i32) {
+	/// Computes the `width` and `height` of the offscreen render and depth target
+	/// from the `width` and `height` of the GlArea widget client area, taking into
+	/// account the `aa` hint, if the
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `target_width` width of the client area of the containing widget
+	/// * `target_height` height of the client area of the containing widget`
+	fn aa_size(aa: gfx::texture::AaMode, target_width: i32, target_height: i32) -> (i32, i32) {
 		let (mx, my) = match aa {
 			gfx::texture::AaMode::Single => (1, 1),
+			// TODO: if we are not implementing supersampling, this is unnecessary
 			gfx::texture::AaMode::Multi(_) => (1, 1),
 			_ => (0, 0),
 		};
-		(width * mx, height * my)
+		(target_width * mx, target_height * my)
 	}
 }
 
+/// Implement custom render behaviour for the GlArea
+/// * `CF` color format of the offline target
+/// * `DF` depth format of the offline target
 pub trait GlRenderCallback<CF, DF>
 where
 	CF: gfx::format::Formatted<View = formats::GtkTargetColorView>,
@@ -420,6 +481,17 @@ where
 	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
 {
+	/// Invoked when the GlArea needs rendering (after an expose or queue_draw event)
+	/// * `gfx_context` Gfx device, factory, encoder attached to the current Gl context
+	/// * `viewport` size of the GlArea
+	/// * `render_target` the offscreen target to render to
+	/// * `depth_buffer` the offscreen depth buffer associated to the `render_target`
+	///
+	/// After rendering, the result should contain either:
+	/// *`Ok(Continue)` to proceed with the postprocessing step
+	/// *`Ok(Skip)` to blit directly to the GlArea buffer
+	/// *`Err(_)` will stop the rendering of the requested frame
+	/// Gtk may or may not retain the previous state of the frame
 	fn render(
 		&mut self,
 		gfx_context: &mut GlGfxContext,
@@ -428,6 +500,10 @@ where
 		depth_buffer: &GlDepthBuffer<DF>,
 	) -> Result<GlRenderCallbackStatus>;
 
+	/// Invoked when the GlArea has been resized
+	/// * `gfx_context` Gfx device, factory, encoder attached to the current Gl context
+	/// * `viewport` size of the GlArea after resizing
+	/// Should return `Continue`
 	fn resize(
 		&mut self,
 		_gfx_context: &mut GlGfxContext,
@@ -437,6 +513,9 @@ where
 	}
 }
 
+/// Implement custom post-processing behaviour for the GlArea
+/// * `CF` color format of the offline target
+/// * `DF` depth format of the offline target
 pub trait GlPostprocessCallback<CF, DF>
 where
 	CF: gfx::format::Formatted<View = formats::GtkTargetColorView>,
@@ -446,6 +525,15 @@ where
 	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
 {
+	/// Invoked when the GlArea needs rendering (after an expose or queue_draw event)
+	/// * `gfx_context` Gfx device, factory, encoder attached to the current Gl context
+	/// * `viewport` size of the GlArea
+	/// * `render_target` the offscreen target to render to
+	/// * `depth_buffer` the offscreen depth buffer associated to the `render_target`
+	/// Returns:
+	/// * `Ok(Continue)` will flush the command buffer and complete the frame by blitting to the GlArea
+	/// * `Err(_)` will stop the rendering of the requested frame
+	/// By default, the post
 	fn postprocess(
 		&mut self,
 		gfx_context: &mut GlGfxContext,
@@ -473,19 +561,40 @@ where
 	DF::Channel: gfx::format::TextureChannel + gfx::format::RenderChannel,
 	DF::Surface: gfx::format::DepthSurface + gfx::format::TextureSurface,
 {
+	/// Creates a new Gfx GlRender context including the Gl Device. The default `epoxy` Gl function pointer
+	/// will be used to load the Gl binding.
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `widget_width` width of the client area of the containing widget
+	/// * `widget_height` height of the client area of the containing widget`
+	/// * `postprocess_shader` optional buffer containing the source code of the postprocessing pixel shader.
+	/// A simple default shader will be used if `None`
 	pub fn new(
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
+		postprocess_shader: Option<&[u8]>,
 	) -> Result<GlRenderContext<CF, DF>> {
-		Self::new_with_loader(aa, widget_width, widget_height, &epoxy::get_proc_addr)
+		Self::new_with_loader(
+			aa,
+			widget_width,
+			widget_height,
+			&epoxy::get_proc_addr,
+			postprocess_shader,
+		)
 	}
-
+	/// Creates a new Gfx GlRender context including the Gl Device.
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `widget_width` width of the client area of the containing widget
+	/// * `widget_height` height of the client area of the containing widget`
+	/// * `get_proc_addr` the function used to look up the Gl API function pointers (usually `epoxy::get_proc_addr`)
+	/// * `postprocess_shader` optional buffer containing the source code of the postprocessing pixel shader.
+	/// A simple default shader will be used if `None`
 	pub fn new_with_loader(
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
 		get_proc_addr: &Fn(&str) -> *const std::ffi::c_void,
+		postprocess_shader: Option<&[u8]>,
 	) -> Result<GlRenderContext<CF, DF>> {
 		use self::FactoryExt as LocalFactory;
 		use gfx::traits::FactoryExt;
@@ -530,11 +639,10 @@ where
 			gfx::texture::WrapMode::Clamp,
 		));
 
-		// TODO: make this configurable
-		let pixel_shader_code = match viewport.aa {
+		let pixel_shader_code = postprocess_shader.unwrap_or_else(|| match viewport.aa {
 			gfx::texture::AaMode::Multi(4) => shaders::POST_PIXEL_SHADER_MSAA_4X.as_bytes(),
 			_ => shaders::POST_PIXEL_SHADER.as_bytes(),
-		};
+		});
 
 		let post_pso = factory.create_pipeline_simple(
 			shaders::POST_VERTEX_SHADER.as_bytes(),
@@ -566,14 +674,20 @@ where
 		})
 	}
 
-	pub fn render_context_mut(&mut self) -> &mut GlGfxContext {
+	/// Returns a reference to the current Gfx context
+	pub fn gfx_context_mut(&mut self) -> &mut GlGfxContext {
 		&mut self.gfx_context
 	}
 
-	pub fn viewport(&self) -> &Viewport {
-		&self.viewport
+	/// Returns a copy of the current viewport
+	pub fn viewport(&self) -> Viewport {
+		self.viewport.clone()
 	}
 
+	/// Re-allocates render buffers and textures if the size has changed since last resize or creation of the context
+	/// * `widget_width` width of the client area of the containing widget
+	/// * `widget_height` height of the client area of the containing widget`
+	/// * `render_callback` if `Some(_)`, forwards the resize message to the given RenderCallbak for internal adjustment
 	pub fn resize<R>(
 		&mut self,
 		widget_width: i32,
@@ -616,6 +730,11 @@ where
 		Ok(())
 	}
 
+	/// Renders on the `GlArea` by invoking the `render` function to write onto the offline render target
+	/// and blit the result onto the actual `GlArea` framebuffer, optionally applying an intermediate
+	/// `postprocess` step (also customizable).
+	/// Also transparently takes care of Gl context and state changes.
+	/// * `render_callback` a reference of the render callback implementing the actual drawing
 	pub fn with_gfx<R>(&mut self, render_callback: &mut R)
 	where
 		R: GlRenderCallback<CF, DF> + GlPostprocessCallback<CF, DF>,
