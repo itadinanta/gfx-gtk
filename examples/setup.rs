@@ -125,7 +125,7 @@ void main() {
 
 impl SimpleRenderCallback {
 	fn new(
-		context: &mut gfx_gtk::GlCallbackContext,
+		context: &mut gfx_gtk::GlRenderContext,
 		viewport: &gfx_gtk::Viewport,
 	) -> gfx_gtk::Result<Self> {
 		let vertices = vec![
@@ -169,7 +169,7 @@ impl gfx_gtk::GlPostprocessCallback<RenderColorFormat, RenderDepthFormat> for Si
 impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleRenderCallback {
 	fn render(
 		&mut self,
-		gfx_context: &mut gfx_gtk::GlCallbackContext,
+		gfx_context: &mut gfx_gtk::GlRenderContext,
 		viewport: &gfx_gtk::Viewport,
 		frame_buffer: &gfx_gtk::GlFrameBuffer<RenderColorFormat>,
 		depth_buffer: &gfx_gtk::GlDepthBuffer<RenderDepthFormat>,
@@ -213,7 +213,7 @@ impl gfx_gtk::GlRenderCallback<RenderColorFormat, RenderDepthFormat> for SimpleR
 		);
 
 		gfx_context.flush();
-		Ok(gfx_gtk::GlRenderCallbackStatus::Complete)
+		Ok(gfx_gtk::GlRenderCallbackStatus::Continue)
 	}
 }
 
@@ -252,7 +252,7 @@ pub fn main() {
 				gfx_gtk::GlGfxContext::new(MSAA, allocation.width, allocation.height).ok();
 			if let Some(ref mut new_context) = new_context {
 				let ref vp = &new_context.viewport().clone();
-				let ref mut ctx = new_context.gfx_context_mut();
+				let ref mut ctx = new_context.render_context_mut();
 				*render_callback.borrow_mut() = SimpleRenderCallback::new(ctx, vp).ok();
 			}
 			*gfx_context.borrow_mut() = new_context;

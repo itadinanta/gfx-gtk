@@ -15,41 +15,59 @@ use gfx_device_gl;
 use std::ops::Fn;
 use std::path::Path;
 
+/// Convenience type to express a typical RGBA quantity as [r,g,b,a] f32
 pub type Rgba = [f32; 4];
+/// Convenience type to express a general purpose vec4 [x,y,z,w] f32
 pub type Float4 = [f32; 4];
+/// Convenienve type to express a floating point depth value as f32
 pub type Depth = f32;
 
+/// Contains definitions of the default color and depth formats
+/// with an eye on compatibility with the GlArea render targets
 pub mod formats {
 	use gfx;
 
+	/// Default render format, RGBA8888
 	pub type GtkTargetColorFormat = gfx::format::Rgba8;
+	/// Default render format [f32;4]
 	pub type GtkTargetColorView = <GtkTargetColorFormat as gfx::format::Formatted>::View;
+	/// Default render format, RGBA8888
 	pub type DefaultRenderColorFormat = gfx::format::Rgba8;
+	/// Default depth+stencil format, 24/8
 	pub type DefaultRenderDepthFormat = gfx::format::DepthStencil;
 
+	/// convenience type for return values of functions that create offscreen
+	/// render targets
 	pub type RenderSurface<R, CF> = (
 		gfx::handle::Texture<R, <CF as gfx::format::Formatted>::Surface>,
 		gfx::handle::ShaderResourceView<R, <CF as gfx::format::Formatted>::View>,
 		gfx::handle::RenderTargetView<R, CF>,
 	);
 
+	/// convenience type for return values of functions that create offscreen
+	/// depth targets
 	pub type DepthSurface<R, DF> = (
 		gfx::handle::Texture<R, <DF as gfx::format::Formatted>::Surface>,
 		gfx::handle::ShaderResourceView<R, <DF as gfx::format::Formatted>::View>,
 		gfx::handle::DepthStencilView<R, DF>,
 	);
 
+	/// convenience type for return values of functions that create offscreen
+	/// depth targets
 	pub type RenderSurfaceWithDepth<R, CF, DF> = (
 		gfx::handle::ShaderResourceView<R, <CF as gfx::format::Formatted>::View>,
 		gfx::handle::RenderTargetView<R, CF>,
 		gfx::handle::DepthStencilView<R, DF>,
 	);
 
+	/// No MSAA
 	pub const MSAA_NONE: gfx::texture::AaMode = gfx::texture::AaMode::Single;
+	/// 4x MSAA - other methods can be implemented in the future, this does quite ok
 	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
 
 gfx_defines!(
+	/// 2d vertex for fullscreen pass
 	vertex BlitVertex {
 		pos: [f32; 2] = "a_Pos",
 		tex_coord: [f32; 2] = "a_TexCoord",
@@ -62,21 +80,29 @@ gfx_defines!(
 );
 
 #[allow(unused)]
-pub struct GfxCallbackContext<D, F>
+/// A container for a GL device and factory, with a convenience encoder ready to use
+/// Typically, it will be used with a GlDevice and GlFactory
+pub struct GfxRenderContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 {
+	/// GFX device
 	pub device: D,
+	/// GFX factory
 	pub factory: F,
+	/// Convenience encoder, other encoders can be used by the library client
+	/// when appropriate
 	pub encoder: gfx::Encoder<D::Resources, D::CommandBuffer>,
 }
 
-impl<D, F> GfxCallbackContext<D, F>
+impl<D, F> GfxRenderContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 {
+	/// creates a Gfx PSO given a vertex/pixel shader pair. The PSO will contain
+	/// a MSAA-enabled rasterizer if AaMode is Multi(_)
 	pub fn create_msaa_pipeline_state<I: gfx::pso::PipelineInit>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -92,17 +118,26 @@ where
 	}
 }
 
+/// a container for the pre-built data and state needed to perform
+/// MSAA resolution and sRGB correction in the post-processing stage
 pub struct GfxPostprocessContext<D>
 where
 	D: gfx::Device,
 {
+	/// a sampler for the source framebuffer
 	pub sampler: gfx::handle::Sampler<D::Resources>,
+	/// pipeline state object with rasterizer and blit shaders
 	pub pso: gfx::PipelineState<D::Resources, postprocess::Meta>,
+	/// a single large triangle (vertices) covering the full screen
 	pub vbuf: gfx::handle::Buffer<D::Resources, BlitVertex>,
+	/// a single large triangle (indices)
 	pub ibuf: gfx::Slice<D::Resources>,
 }
 
 impl GfxPostprocessContext<GlDevice> {
+	/// performs a full screen pass using the original render screen as the source
+	/// and the GTK framebuffer as the target, using baked-in settings
+	/// TODO: make this easy to override
 	pub fn full_screen_blit<CF>(
 		&self,
 		encoder: &mut gfx::Encoder<GlResources, GlCommandBuffer>,
@@ -125,24 +160,29 @@ impl GfxPostprocessContext<GlDevice> {
 	}
 }
 
-impl<D, F> GfxCallbackContext<D, F>
+impl<D, F> GfxRenderContext<D, F>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 {
+	/// flushes the command buffer and executes its content
 	pub fn flush(&mut self) {
 		self.encoder.flush(&mut self.device);
 	}
 }
 
 #[allow(unused)]
+/// Structure encapsulating all the GFX state needed for rendering within
+/// a GL context in GTK
 pub struct GfxContext<D, F, CF, DF>
 where
 	D: gfx::Device,
 	F: gfx::Factory<D::Resources>,
 	CF: gfx::format::Formatted,
 {
-	gfx_context: GfxCallbackContext<D, F>,
+	///
+	gfx_context: GfxRenderContext<D, F>,
+	/// describes the gtk GlArea size and caps
 	viewport: Viewport,
 	postprocess_context: GfxPostprocessContext<D>,
 	postprocess_target: gfx::handle::RenderTargetView<D::Resources, formats::GtkTargetColorFormat>,
@@ -176,6 +216,12 @@ impl<T: std::fmt::Display> std::convert::From<T> for self::Error {
 }
 
 pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
+	/// Creates a render target (with its associated texture source view and a depth target
+	/// which are resonably compatible with something that we can blit onto a GtkGlView
+	/// framebuffer
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `width` width of the client area of the containing widget
+	/// * `height` height of the client area of the containing widget`
 	fn create_gtk_compatible_targets<CF, DF>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -196,6 +242,8 @@ pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 		Ok((color_resource, color_target, depth_target))
 	}
 
+	/// creates a Gfx PSO given a vertex/pixel shader pair. The PSO will contain
+	/// a MSAA-enabled rasterizer if AaMode is Multi(_)
 	fn create_msaa_pipeline_state<I: gfx::pso::PipelineInit>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -217,6 +265,10 @@ pub trait FactoryExt<R: gfx::Resources>: gfx::traits::FactoryExt<R> {
 		self.create_pipeline_state(&shaders, gfx::Primitive::TriangleList, rasterizer, init)
 	}
 
+	/// Creates a depth target for the GlArea client area
+	/// * `aa` antialiasing mode, currently supported `Single` and `Multi(4)`
+	/// * `width` width of the client area of the containing widget
+	/// * `height` height of the client area of the containing widget`
 	fn create_gtk_compatible_depth_target<D>(
 		&mut self,
 		aa: gfx::texture::AaMode,
@@ -308,12 +360,19 @@ pub fn debug_load() {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Hint returned at the end of Render and PostProcess calls.
+/// Returning `Skip` at the end of the render pass will bypass
+/// the postprocessing stage
 pub enum GlRenderCallbackStatus {
-	Complete,
-	NoFlush,
+	/// Continue onto the next render pass, from Render to Postprocess
+	Continue,
+	/// Skip the next render passes
+	Skip,
 }
 
-pub type GlCallbackContext = GfxCallbackContext<GlDevice, GlFactory>;
+/// Specalization of the GlRenderContext to be used with a Gl device
+pub type GlRenderContext = GfxRenderContext<GlDevice, GlFactory>;
+/// Specalization of the GlCallbackContext to be used with a Gl device
 pub type GlPostprocessContext = GfxPostprocessContext<GlDevice>;
 
 #[derive(Clone)]
@@ -363,7 +422,7 @@ where
 {
 	fn render(
 		&mut self,
-		gfx_context: &mut GlCallbackContext,
+		gfx_context: &mut GlRenderContext,
 		viewport: &Viewport,
 		render_target: &GlFrameBuffer<CF>,
 		depth_buffer: &GlDepthBuffer<DF>,
@@ -371,10 +430,10 @@ where
 
 	fn resize(
 		&mut self,
-		_gfx_context: &mut GlCallbackContext,
+		_gfx_context: &mut GlRenderContext,
 		_viewport: Viewport,
 	) -> Result<GlRenderCallbackStatus> {
-		Ok(GlRenderCallbackStatus::Complete)
+		Ok(GlRenderCallbackStatus::Continue)
 	}
 }
 
@@ -389,7 +448,7 @@ where
 {
 	fn postprocess(
 		&mut self,
-		gfx_context: &mut GlCallbackContext,
+		gfx_context: &mut GlRenderContext,
 		postprocess_context: &GlPostprocessContext,
 		_viewport: &Viewport,
 		render_screen: &GlFrameBufferTextureSrc<CF>,
@@ -401,7 +460,7 @@ where
 			post_target,
 		);
 		gfx_context.flush();
-		Ok(GlRenderCallbackStatus::Complete)
+		Ok(GlRenderCallbackStatus::Continue)
 	}
 }
 
@@ -490,7 +549,7 @@ where
 			sampler: nearest_sampler,
 		};
 
-		let gfx_context = GlCallbackContext {
+		let gfx_context = GlRenderContext {
 			device,
 			factory,
 			encoder,
@@ -507,7 +566,7 @@ where
 		})
 	}
 
-	pub fn gfx_context_mut(&mut self) -> &mut GlCallbackContext {
+	pub fn render_context_mut(&mut self) -> &mut GlRenderContext {
 		&mut self.gfx_context
 	}
 
