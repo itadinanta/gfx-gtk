@@ -141,10 +141,10 @@ extern crate epoxy;
 extern crate gdk;
 #[macro_use]
 extern crate gfx;
+extern crate gfx_device_gl;
 extern crate gl;
 extern crate gtk;
 extern crate libc;
-extern crate gfx_device_gl;
 extern crate shared_library;
 
 mod dl;
@@ -493,16 +493,20 @@ where
 	R: gfx::Resources,
 {
 }
-/// Loads the Gl function pointers via epoxy.
+
+/// Loads the Gl function pointers via epoxy, using the given lookup function, after initializing epoxy itself.
 ///
 /// Functions names are looked up first in the current .exe, and, failing that,
 /// in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
 ///
-/// This function needs to be invoked only once, at startup, by the host program.
+/// `get_proc_addr` must be a wrapper of [epoxy::get_proc_addr()]
 ///
-/// Failure to load any function will be silent. Use [debug_load()] for diagnostic output.
-///
-pub fn load() {
+/// Only use this function to provide your own wrapper. For "normal" use, [load()] or [debug_load()] are recommended
+/// instead
+pub fn load_with<F>(get_proc_addr: F)
+where
+	F: Fn(&str) -> dl::LibPtr,
+{
 	use self::dl::{fn_from, DlProcLoader, Failover};
 	let loader = Failover(
 		DlProcLoader::current_module(),
@@ -515,9 +519,20 @@ pub fn load() {
 		),
 	);
 	epoxy::load_with(fn_from(loader));
-	gl::load_with(epoxy::get_proc_addr);
+	gl::load_with(get_proc_addr);
 }
-
+/// Loads the Gl function pointers via epoxy, after initializing epoxy itself.
+///
+/// Functions names are looked up first in the current .exe, and, failing that,
+/// in the `libepoxy` dylib - attempting to load `libepoxy-0`, `libepoxy0` and `libepoxy`
+///
+/// This function needs to be invoked only once, at startup, by the host program.
+///
+/// Failure to load any function will be silent. Use [debug_load()] for diagnostic output.
+///
+pub fn load() {
+	load_with(epoxy::get_proc_addr);
+}
 /// Loads the Gl function pointers via epoxy, with some diagnostic output.
 ///
 /// Functions names are looked up first in the current .exe, and, failing that,
@@ -528,19 +543,7 @@ pub fn load() {
 /// Will dump to stdout any failure to load a function (for dll or symbol not found) so this
 /// is better suited for debugging. Use [load()] instead for production code.
 pub fn debug_load() {
-	use self::dl::{debug_get_proc_addr, fn_from, DlProcLoader, Failover};
-	let loader = Failover(
-		DlProcLoader::current_module(),
-		Failover(
-			DlProcLoader::open(Path::new("libepoxy-0")),
-			Failover(
-				DlProcLoader::open(Path::new("libepoxy0")),
-				DlProcLoader::open(Path::new("libepoxy")),
-			),
-		),
-	);
-	epoxy::load_with(fn_from(loader));
-	gl::load_with(debug_get_proc_addr);
+	load_with(dl::debug_get_proc_addr);
 }
 
 #[derive(Clone, Copy, Debug)]
