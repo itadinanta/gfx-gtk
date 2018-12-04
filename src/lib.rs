@@ -903,10 +903,19 @@ where
 			renderbuffer_binding as u32
 		}
 
+		fn get_current_program() -> u32 {
+			let mut program = 0;
+			unsafe {
+				gl::GetIntegerv(gl::CURRENT_PROGRAM, &mut program);
+			}
+			program as u32
+		}
+
 		// we need to keep track of the framebuffer Gtk wants to render to,
 		// which has been bound in the current gl_context, by the GlArea machinery
 		let gtk_framebuffer_name = get_current_draw_framebuffer_name();
 		let gtk_renderbuffer_binding = get_current_renderbuffer_binding();
+		let gtk_program = get_current_program();
 		// we do some GFX rendering, will knacker the buffer bindings but end up with a surface
 		// we can blit from
 		let render_result = GlRenderCallback::render(
@@ -937,6 +946,7 @@ where
 			// framebuffer bindings, yet, so we can grab it
 			let gfx_framebuffer_name = get_current_draw_framebuffer_name();
 			unsafe {
+				gl::UseProgram(gtk_program);
 				// we want the framebuffer from Gfx (which we have just got) as the blit source
 				gl::BindFramebuffer(gl::READ_FRAMEBUFFER, gfx_framebuffer_name);
 				// and the framebuffer from Gtk (which we have saved earlier) as the destination

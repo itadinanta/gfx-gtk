@@ -21,8 +21,8 @@ shared_library = "0.1"
 gtk = { version = "0.5", features=["v3_16"] }
 gdk = { version = "0.9", features=["v3_16"] }
 gl = "0.10"
-gfx = "0.17"
-gfx_device_gl = "0.15"
+gfx = { git="https://github.com/gfx-rs/gfx.git", rev="56be7773b6c62a5e243a6481a632374370ee33fe" }
+gfx_device_gl = { git="https://github.com/gfx-rs/gfx.git", rev="56be7773b6c62a5e243a6481a632374370ee33fe" }
 
 [dev-dependencies]
 cgmath = "0.16"
