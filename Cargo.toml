@@ -1,6 +1,6 @@
 [package]
 name = "gfx-gtk"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Nicola Orru <nigu.orru@gmail.com>"]
 keywords = ["gfx", "gtk", "glarea", "epoxy", "opengl"]
 #edition = "2018"
@@ -21,8 +21,8 @@ shared_library = "0.1"
 gtk = { version = "0.5", features=["v3_16"] }
 gdk = { version = "0.9", features=["v3_16"] }
 gl = "0.10"
-gfx = "0.17"
-gfx_device_gl = "0.15"
+gfx = "0.18"
+gfx_device_gl = "0.16"
 
 [dev-dependencies]
 cgmath = "0.16"
