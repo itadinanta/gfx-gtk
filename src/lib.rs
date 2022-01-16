@@ -205,13 +205,13 @@ pub mod formats {
 	pub const MSAA_4X: gfx::texture::AaMode = gfx::texture::AaMode::Multi(4);
 }
 
-/// Post-processing gfx vertex structure
+// Post-processing gfx vertex structure
 gfx_vertex_struct!(BlitVertex {
 	pos: [f32; 2] = "a_Pos",
 	tex_coord: [f32; 2] = "a_TexCoord",
 });
 
-/// Post-processing gfx pipeline definitions
+// Post-processing gfx pipeline definitions
 gfx_pipeline!(postprocess {
 		vbuf: gfx::VertexBuffer<BlitVertex> = (),
 		src: gfx::TextureSampler<formats::GtkTargetColorView> = "t_Source",
@@ -741,7 +741,7 @@ where
 		aa: gfx::texture::AaMode,
 		widget_width: i32,
 		widget_height: i32,
-		get_proc_addr: &Fn(&str) -> dl::LibPtr,
+		get_proc_addr: &dyn Fn(&str) -> dl::LibPtr,
 		postprocess_shader: Option<&[u8]>,
 	) -> Result<GlRenderContext<CF, DF>> {
 		use self::FactoryExt as LocalFactory;
