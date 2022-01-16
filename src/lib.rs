@@ -10,14 +10,14 @@
 //!
 //! ## Add the Cargo dependencies
 //!
-//! ```
+//! ```ignore
 //! [dependencies]
 //! gfx_gtk = "0.3"
 //! ```
 //!
 //! ## Import crate and packages
 //!
-//! ```
+//! ```ignore
 //! extern crate gfx_gtk;
 //!
 //! use gfx_gtk::formats;
@@ -26,7 +26,7 @@
 //!
 //! ## Choose some render formats and AA mode
 //!
-//! ```
+//! ```ignore
 //! const MSAA: gfx::texture::AaMode = formats::MSAA_4X;
 //! type RenderColorFormat = formats::DefaultRenderColorFormat;
 //! type RenderDepthFormat = formats::DefaultRenderDepthFormat;
@@ -37,7 +37,7 @@
 //! You need to implement [GlRenderCallback] and [GlPostprocessCallback] traits (the latter
 //! can be made to use the default implementation)
 //!
-//! ```
+//! ```ignore
 //! struct SimpleRenderCallback {
 //! 	...
 //! }
@@ -72,7 +72,7 @@
 //! and [GlRenderCallback] must be created in the closure that gets attached to `GlArea::connect_realize()` after
 //! the `make_current()` call (otherwise it won't be possible to "bind" to the current `GlArea` Gl context
 //!
-//! ```
+//! ```ignore
 //!
 //!	let gfx_context: Rc<RefCell<Option<GlRenderContext<RenderColorFormat, RenderDepthFormat>>>> = Rc::new(RefCell::new(None));
 //!
